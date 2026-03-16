@@ -1,0 +1,131 @@
+/* ── Reset ────────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* Prevent text size adjustment on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: #F5F0E8;
+  /* Fill the whole screen including under the status bar */
+  min-height: 100dvh;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── iPad safe-area padding ───────────────────────────────────────────────── */
+/* Applied to the outermost app shell so content never hides behind the
+   home indicator, notch, or rounded corners.                                */
+
+/* The bundle renders its root div with inline styles, so we apply safe-area
+   padding at the html/body level and let the app content sit inside it.     */
+
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* ── Minimum touch target size ───────────────────────────────────────────── */
+/* Apple HIG recommends 44×44pt minimum. This nudges small interactive
+   elements without breaking layouts.                                         */
+button, [role="button"], input[type="checkbox"], input[type="radio"],
+select, a {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* ── Prevent callouts & selections on interactive UI elements ────────────── */
+button, [role="button"] {
+  -webkit-touch-callout: none;
+  user-select: none;
+  cursor: pointer;
+  /* Remove default tap highlight */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Typography scale for iPad ───────────────────────────────────────────── */
+/* Safari on iPad will auto-zoom on any input with font-size < 16px.
+   This ensures all inputs are large enough.                                  */
+input, textarea, select {
+  font-size: 16px;
+}
+
+/* ── Scrollable areas ────────────────────────────────────────────────────── */
+/* Momentum scrolling on iOS for any overflow container */
+[style*="overflow"] {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Sidebar layout tweak for iPad ──────────────────────────────────────── */
+/* The bundle sidebar uses inline flex. On an iPad in landscape the sidebar
+   has plenty of room; in portrait we collapse it to icons only.             */
+
+@media (max-width: 768px) and (orientation: portrait) {
+  /* Narrow the sidebar on portrait iPad (768px is iPad mini portrait) */
+  /* The sidebar has inline style width, so we use !important here.    */
+  div[style*="width: 220px"],
+  div[style*="width:220px"] {
+    width: 64px !important;
+    min-width: 64px !important;
+  }
+
+  /* Hide text labels inside sidebar items, keep icons */
+  div[style*="width: 220px"] span:not(:first-child),
+  div[style*="width:220px"] span:not(:first-child) {
+    display: none !important;
+  }
+
+  /* Adjust sidebar item padding */
+  div[style*="width: 220px"] > div > div,
+  div[style*="width:220px"] > div > div {
+    justify-content: center !important;
+    padding: 12px 4px !important;
+  }
+}
+
+/* ── Landscape full-height ───────────────────────────────────────────────── */
+@media (orientation: landscape) {
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
+/* ── Focus styles for keyboard/switch access ─────────────────────────────── */
+:focus-visible {
+  outline: 3px solid #4E8B80;
+  outline-offset: 2px;
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Pulse animation used by ThinkingDots ────────────────────────────────── */
+@keyframes pulse {
+  0%, 80%, 100% { transform: scale(0.85); opacity: 0.5; }
+  40%           { transform: scale(1.2);  opacity: 1;   }
+}
