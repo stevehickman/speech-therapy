@@ -1,5 +1,8 @@
 # generated files
 ./ppa-source/ppa-speech-therapy-bundle.jsx
+# NOTE: we do keep the bundle files that are part of the installers - because they are part of the 
+# installers. But we don't keep the above bundle file because we just regenerate it all the time, which would
+# result in constant commits even if there are no code differences.
 
 # Logs
 logs

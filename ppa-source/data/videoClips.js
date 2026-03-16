@@ -6,7 +6,7 @@ export const VIDEO_CLIPS = [
     id: "vc1",
     title: "A Day at the Market",
     youtubeId: "zr9leP_Dcm8",
-    startSeconds: 10,
+    startSeconds: 1,
     description: "A butterfly sips nectar from a flower",
     thumbnail: "🛒",
     difficulty: "easy",
