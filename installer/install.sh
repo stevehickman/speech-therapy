@@ -8,6 +8,8 @@ set -euo pipefail
 # ── Resolve the directory that contains this script and the bundle ────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE_SRC="$SCRIPT_DIR/ppa-speech-therapy-bundle.jsx"
+USER_GUIDE_SRC="$SCRIPT_DIR/ppa-speech-therapy-user-guide.pdf"
+TECH_DOCS_SRC="$SCRIPT_DIR/ppa-speech-therapy-docs.pdf"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 BOLD='\033[1m'
@@ -42,10 +44,16 @@ inf "It creates a Vite project, configures your Anthropic API key,"
 inf "and adds a Launch icon to your Desktop."
 echo
 
-# ── Verify bundle is present ──────────────────────────────────────────────────
+# ── Verify bundle and docs are present ────────────────────────────────────────
 if [[ ! -f "$BUNDLE_SRC" ]]; then
   err "ppa-speech-therapy-bundle.jsx not found next to the installer."
-  inf "Please make sure both files are in the same folder and try again."
+  inf "Please make sure all installer files are in the same folder and try again."
+  echo; read -r -p "  Press Return to close…"; exit 1
+fi
+if [[ ! -f "$USER_GUIDE_SRC" || ! -f "$TECH_DOCS_SRC" ]]; then
+  err "PDF documentation files not found next to the installer."
+  inf "Please make sure ppa-speech-therapy-user-guide.pdf and ppa-speech-therapy-docs.pdf"
+  inf "are in the same folder as the installer and try again."
   echo; read -r -p "  Press Return to close…"; exit 1
 fi
 
@@ -167,6 +175,11 @@ ok "Vite project created"
 cp "$BUNDLE_SRC" "$INSTALL_DIR/src/ppa-speech-therapy-bundle.jsx"
 ok "Bundle copied to src/"
 
+# ── Copy documentation PDFs ───────────────────────────────────────────────────
+cp "$USER_GUIDE_SRC" "$INSTALL_DIR/ppa-speech-therapy-user-guide.pdf"
+cp "$TECH_DOCS_SRC"  "$INSTALL_DIR/ppa-speech-therapy-docs.pdf"
+ok "Documentation PDFs copied"
+
 # ── Patch App.jsx ─────────────────────────────────────────────────────────────
 cat > "$INSTALL_DIR/src/App.jsx" <<'APPJSX'
 import App from './ppa-speech-therapy-bundle.jsx';
@@ -174,27 +187,7 @@ export default App;
 APPJSX
 ok "src/App.jsx configured"
 
-# ── Patch CallAPI headers in the bundle ───────────────────────────────────────
-# Replace the single-header object with the four required Vite headers.
-# The sed pattern targets the exact string emitted by bundle.js.
-BUNDLE="$INSTALL_DIR/src/ppa-speech-therapy-bundle.jsx"
-
-OLD_HEADERS='headers: { "Content-Type": "application/json" },'
-NEW_HEADERS='headers: { "Content-Type": "application/json", "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },'
-
-# Use Python for reliable in-place string replacement (avoids sed BSD/GNU differences)
-python3 - "$BUNDLE" "$OLD_HEADERS" "$NEW_HEADERS" <<'PYSCRIPT'
-import sys
-path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(path, 'r', encoding='utf-8') as f:
-    content = f.read()
-if old not in content:
-    print("  WARNING: API header pattern not found — bundle may already be patched or format changed.")
-    sys.exit(0)
-with open(path, 'w', encoding='utf-8') as f:
-    f.write(content.replace(old, new, 1))
-PYSCRIPT
-ok "API headers patched in bundle"
+# API headers are now baked into fetchAnthropicApi() in shared.jsx — no bundle patch needed.
 
 # ── Write .env ────────────────────────────────────────────────────────────────
 cat > "$INSTALL_DIR/.env" <<ENVFILE

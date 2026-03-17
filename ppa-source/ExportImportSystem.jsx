@@ -5,33 +5,27 @@
 // Snapshot tracking: localStorage ppa_export_snapshots  → {filename: {itemId: contentHash}}
 // Known files:       localStorage ppa_known_files        → {moduleId: [filename, ...]}
 
-const PPA_EXT          = ".ppa";
-const PPA_SNAPSHOTS_KEY = "ppa_export_snapshots";
-const PPA_FILES_KEY    = "ppa_known_files";
-const DICT_KEY        = "ppa_dictionary";   // unified word info for all modules
-const DICT_NAMING_KEY = "ppa_naming_items"; // naming practice list (also read by SR engine)
-
-// Thin wrappers — real implementations are in data/dictionary.js, which is
-// bundled after the SB word-bank data that dictBuildSeed() depends on.
-// Function declarations are hoisted so these forward calls are safe.
-function ppaGetGraphic(word, fallback) { return dictGetGraphic(word, fallback); }
-function ppaSyncGraphics(items)        { dictSyncFromNamingItems(items); }
+export const PPA_EXT          = ".ppa";
+export const PPA_SNAPSHOTS_KEY = "ppa_export_snapshots";
+export const PPA_FILES_KEY    = "ppa_known_files";
+export const DICT_KEY        = "ppa_dictionary";   // unified word info for all modules
+export const DICT_NAMING_KEY = "ppa_naming_items"; // naming practice list (also read by SR engine)
 
 // ── Core utilities ─────────────────────────────────────────────────────────────
 
-function ppaGetSnapshots() {
+export function ppaGetSnapshots() {
   try { return JSON.parse(localStorage.getItem(PPA_SNAPSHOTS_KEY) || "{}"); } catch { return {}; }
 }
-function ppaSaveSnapshots(s) {
+export function ppaSaveSnapshots(s) {
   try { localStorage.setItem(PPA_SNAPSHOTS_KEY, JSON.stringify(s)); } catch {}
 }
-function ppaGetKnownFilesAll() {
+export function ppaGetKnownFilesAll() {
   try { return JSON.parse(localStorage.getItem(PPA_FILES_KEY) || "{}"); } catch { return {}; }
 }
-function ppaFilesForModule(moduleId) {
+export function ppaFilesForModule(moduleId) {
   return ppaGetKnownFilesAll()[moduleId] || [];
 }
-function ppaAddKnownFile(moduleId, filename) {
+export function ppaAddKnownFile(moduleId, filename) {
   const all = ppaGetKnownFilesAll();
   const list = all[moduleId] || [];
   if (!list.includes(filename)) {
@@ -40,15 +34,15 @@ function ppaAddKnownFile(moduleId, filename) {
   }
 }
 // Canonical ID for any exportable item (naming/video/sentenceBuilder use "id"; others use "_id")
-function ppaItemId(item)  { return item.id ?? item._id ?? null; }
+export function ppaItemId(item)  { return item.id ?? item._id ?? null; }
 
 // Content hash: everything except meta-tracking fields
-function ppaContentHash(item) {
+export function ppaContentHash(item) {
   const { id: _i, _id: _i2, _sourceFile: _sf, _builtin: _b, ...content } = item;
   return JSON.stringify(Object.fromEntries(Object.entries(content).sort()));
 }
 
-function ppaIsItemDirty(item, snapshots) {
+export function ppaIsItemDirty(item, snapshots) {
   const f = item._sourceFile;
   if (!f) return false;
   const id = ppaItemId(item);
@@ -57,7 +51,7 @@ function ppaIsItemDirty(item, snapshots) {
 }
 
 // Record export snapshots and update _sourceFile on items
-function ppaRecordExportInMemory(items, filename) {
+export function ppaRecordExportInMemory(items, filename) {
   const snaps = ppaGetSnapshots();
   if (!snaps[filename]) snaps[filename] = {};
   const updated = items.map(item => {
@@ -69,7 +63,7 @@ function ppaRecordExportInMemory(items, filename) {
 }
 
 // Trigger file download
-function ppaDownload(filename, payload) {
+export function ppaDownload(filename, payload) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
@@ -79,7 +73,7 @@ function ppaDownload(filename, payload) {
 }
 
 // Parse uploaded .ppa file
-function ppaReadFile(file) {
+export function ppaReadFile(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = e => {
@@ -102,7 +96,7 @@ function ppaReadFile(file) {
 //   onExport     fn(selectedIds: Set, filename: string)
 //   onClose      fn()
 
-function PpaExportDialog({ moduleId, items, getLabel, onExport, onClose }) {
+export function PpaExportDialog({ moduleId, items, getLabel, onExport, onClose }) {
   const knownFiles = ppaFilesForModule(moduleId);
   // Default filename: most common _sourceFile among items, or ""
   const defaultFile = (() => {
@@ -235,7 +229,7 @@ function PpaExportDialog({ moduleId, items, getLabel, onExport, onClose }) {
 //   onReexport   fn(selections) where selections = { [itemId]: { checked, targetFile } }
 //   onSkip       fn()
 
-function PpaReexportDialog({ moduleId, dirtyItems, getLabel, knownFiles, onReexport, onSkip }) {
+export function PpaReexportDialog({ moduleId, dirtyItems, getLabel, knownFiles, onReexport, onSkip }) {
   const [sel, setSel] = useState(() => {
     const s = {};
     for (const item of dirtyItems) {
@@ -349,7 +343,7 @@ function PpaReexportDialog({ moduleId, dirtyItems, getLabel, knownFiles, onReexp
 // Props:
 //   onFiles  fn(files: File[])  — called with all selected files
 
-function PpaImportButton({ onFiles, style = {} }) {
+export function PpaImportButton({ onFiles, style = {} }) {
   const ref = useRef(null);
   return (
     <>
@@ -371,7 +365,7 @@ function PpaImportButton({ onFiles, style = {} }) {
 //   onExport  fn()
 //   onImport  fn(files: File[])
 
-function PpaAdminToolbar({ onExport, onImport }) {
+export function PpaAdminToolbar({ onExport, onImport }) {
   return (
     <div style={{ display: "flex", gap: 8 }}>
       <button onClick={onExport}
@@ -396,7 +390,7 @@ function PpaAdminToolbar({ onExport, onImport }) {
 //   buildPayload     fn(filename, itemsForFile) → export payload object
 //   applyUpdates     fn(updatedItems)  — save back the full custom items array with new _sourceFile
 
-function ppaHandleReexport(moduleId, dirtyItems, allCustomItems, selections, getEffective, buildPayload, applyUpdates) {
+export function ppaHandleReexport(moduleId, dirtyItems, allCustomItems, selections, getEffective, buildPayload, applyUpdates) {
   const snapshots = ppaGetSnapshots();
   const newSnaps  = { ...snapshots };
 
@@ -482,12 +476,12 @@ async function ppaHandleImport(moduleId, files, expectedId, processData, onSucce
 // tracking, settings) into a single .ppabak file. Restoring writes them all back
 // and reloads the page — surviving tool updates and redeployments.
 
-const PPA_BAK_EXT         = ".ppabak";
+export const PPA_BAK_EXT         = ".ppabak";
 const PPA_LAST_BACKUP_KEY  = "ppa_last_backup";   // {time, contentHash}
 
 // Compute a fast hash of all content-bearing keys (excluding progress logs
 // to avoid flagging the backup as stale every time a session is logged)
-function ppaContentStateHash() {
+export function ppaContentStateHash() {
   const CONTENT_KEYS = [
     "ppa_naming_items", "ppa_repetition_levels", "ppa_scripts",
     "ppa_sentence_completions", "ppa_sentence_constructions",
@@ -504,7 +498,7 @@ function ppaContentStateHash() {
 }
 
 // Returns true when content has changed since last backup OR backup is older than maxAgeDays
-function ppaBackupIsStale(maxAgeDays = 7) {
+export function ppaBackupIsStale(maxAgeDays = 7) {
   try {
     const raw = localStorage.getItem(PPA_LAST_BACKUP_KEY);
     if (!raw) return true;
@@ -516,7 +510,7 @@ function ppaBackupIsStale(maxAgeDays = 7) {
 }
 
 // Collect everything — all ppa_* keys — and download as .ppabak
-function ppaDoBackup(basenameHint = "ppa-therapy-backup") {
+export function ppaDoBackup(basenameHint = "ppa-therapy-backup") {
   const allKeys = Object.keys(localStorage).filter(k => k.startsWith("ppa_"));
   const data = {};
   for (const k of allKeys) {
@@ -546,7 +540,7 @@ function ppaDoBackup(basenameHint = "ppa-therapy-backup") {
 }
 
 // Read a .ppabak file and restore all keys, then reload
-function ppaDoRestore(file, onError) {
+export function ppaDoRestore(file, onError) {
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
@@ -580,7 +574,7 @@ function ppaDoRestore(file, onError) {
 
 // ── BackupRestorePanel ─────────────────────────────────────────────────────────
 // Rendered inside ProgressModule admin view as a self-contained card.
-function BackupRestorePanel({ onBackupDone } = {}) {
+export function BackupRestorePanel({ onBackupDone } = {}) {
   const restoreRef = useRef(null);
   const [restoreError, setRestoreError] = useState(null);
   const [restoreConfirm, setRestoreConfirm] = useState(false);
