@@ -17,7 +17,7 @@
  *
  * Defaults:
  *   rootDir    = directory of this script
- *   entryFile  = ppa-speech-therapy_3_final.jsx
+ *   entryFile  = ppa-speech-therapy_main.jsx
  *   outputFile = ppa-speech-therapy-bundle.jsx
  */
 

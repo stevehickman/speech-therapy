@@ -1,5 +1,5 @@
 // Default sentence completion and construction tasks for the Sentence Work module
-// Used by: SentenceModule (ppa-speech-therapy_3_final.jsx)
+// Used by: SentenceModule (ppa-speech-therapy_main.jsx)
 // localStorage keys: ppa_sentence_completions, ppa_sentence_constructions
 
 export const SENTENCE_COMPLETIONS = [

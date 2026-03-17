@@ -4,9 +4,16 @@ import {
   SB_ADVERBS, SB_PRONOUNS, SB_PREPS, SB_ARTICLES,
 } from "./data/sbWordBank.js";
 import { conjugateVerb } from "./data/sbConjugation.js";
-import { PPA_EXT } from "./ExportImportSystem.jsx";
+import {
+  PPA_EXT,
+  ppaGetSnapshots, ppaFilesForModule, ppaAddKnownFile,
+  ppaItemId, ppaIsItemDirty, ppaRecordExportInMemory,
+  ppaDownload, ppaHandleReexport,
+  PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
+} from "./ExportImportSystem.jsx";
 import { useDictionaryLookup, isImageGraphic, dictGetEntry, dictAddWord } from "./data/dictionary.js";
 import { CLAUDE_MODEL } from "./data/config.js";
+import { fetchAnthropicApi } from "./shared.jsx";
 
 // ---- SENTENCE BUILDER ----
 function SentenceBuilderModule({ addToLog }) {
@@ -35,15 +42,10 @@ function SentenceBuilderModule({ addToLog }) {
         const chipId = Date.now() + Math.random();
         setWords(prev => [...prev, { text: w, emoji: "❓", id: chipId }]);
         dictAddWord(w, "❓"); // register now; graphic may be upgraded below
-        fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: CLAUDE_MODEL, max_tokens: 16,
-            messages: [{ role: "user", content: `Reply with only a single emoji that best represents the word "${w}". Just the emoji character, nothing else.` }],
-          }),
+        fetchAnthropicApi({
+          model: CLAUDE_MODEL, max_tokens: 16,
+          messages: [{ role: "user", content: `Reply with only a single emoji that best represents the word "${w}". Just the emoji character, nothing else.` }],
         })
-          .then(r => r.json())
           .then(data => {
             const candidate = (data.content?.map(b => b.text || "").join("") ?? "").trim();
             // Accept only short strings that contain at least one emoji codepoint

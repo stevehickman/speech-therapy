@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { NAMING_ITEMS } from "./data/namingItems.js";
 import { CLAUDE_MODEL, SYSTEM_PROMPT } from "./data/config.js";
-import { PPA_EXT } from "./ExportImportSystem.jsx";
+import { CallAPI, ThinkingDots } from "./shared.jsx";
+import {
+  PPA_EXT,
+  ppaGetSnapshots, ppaFilesForModule, ppaAddKnownFile,
+  ppaItemId, ppaIsItemDirty, ppaRecordExportInMemory,
+  ppaDownload, ppaHandleReexport,
+  PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
+} from "./ExportImportSystem.jsx";
 import { dictLoadNamingItems, dictSaveNamingItems, dictBuildSeed, isImageGraphic } from "./data/dictionary.js";
 
 const ADMIN_PIN   = "1234"; // change this to set a different PIN
@@ -59,6 +66,7 @@ const REQUEUE_GAP  = 4;
 // Interval multipliers by result
 const SR_FACTOR = {
   correct:       1.2,  // modest growth — PPA patients may not hold gains
+  space_cued:    0.9,  // mild step back — needed phoneme-starter prompts
   semantic_cued: 0.8,  // slight step back — needed a concept cue
   phonemic_cued: 0.5,  // significant step back — needed a sound cue
   failed:        0,    // special-cased below: reset to 1 day
@@ -220,48 +228,6 @@ const EMOJI_SETS = {
   "👤 People":   ["👨","👩","👦","👧","👶","🧓","👩‍⚕️","👨‍🍳","👩‍🏫","👮","🧑‍🎨","👩‍💼","🧑‍🔧","👷","🧑‍🌾"],
   "🎨 Misc":     ["❤️","⭐","🎵","🎈","🎁","🏆","🔔","💡","🔥","💧","🌀","⚡","🎯","🧩","🎲"],
 };
-
-// ── Tiny CallAPI inline (avoids cross-file prop threading) ─────────────────────
-function CallAPI({ messages, onResult, onError }) {
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: CLAUDE_MODEL,
-            max_tokens: 1000,
-            system: SYSTEM_PROMPT,
-            messages,
-          }),
-        });
-        const data = await res.json();
-        if (!cancelled) onResult(data.content?.[0]?.text ?? "");
-      } catch (e) {
-        if (!cancelled) onError(e);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-  return null;
-}
-
-function ThinkingDots() {
-  return (
-    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-      {[0, 1, 2].map(i => (
-        <span key={i} style={{
-          width: 7, height: 7, borderRadius: "50%", background: "#4E8B80",
-          animation: "namingDot 1.2s ease-in-out infinite",
-          animationDelay: `${i * 0.2}s`,
-        }} />
-      ))}
-      <style>{`@keyframes namingDot{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1);opacity:1}}`}</style>
-    </span>
-  );
-}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 // Resize + compress a File/Blob to a base64 JPEG data-URL via an offscreen canvas.
@@ -862,7 +828,8 @@ function Practice({ items, addToLog }) {
 
   const [phase,     setPhase]     = useState("show");
   const [response,  setResponse]  = useState("");
-  const [score,     setScore]     = useState({ correct: 0, semantic_cued: 0, phonemic_cued: 0, failed: 0 });
+  const [score,     setScore]     = useState({ correct: 0, space_cued: 0, semantic_cued: 0, phonemic_cued: 0, failed: 0 });
+  const [phonemesRevealed, setPhonemesRevealed] = useState(0);
   const [aiComment, setAiComment] = useState("");
   const [loadingAI, setLoadingAI] = useState(false);
   const [pendingAI, setPendingAI] = useState(null);
@@ -910,9 +877,10 @@ function Practice({ items, addToLog }) {
 
     getAIFeedback(
       response || "(no response)",
-      type === "correct"       ? "none"     :
-      type === "semantic_cued" ? "semantic" :
-      type === "phonemic_cued" ? "phonemic" : "full reveal",
+      type === "correct"       ? "none"            :
+      type === "space_cued"    ? "phoneme starter" :
+      type === "semantic_cued" ? "semantic"         :
+      type === "phonemic_cued" ? "phonemic"         : "full reveal",
       item.word,
     );
   };
@@ -927,22 +895,22 @@ function Practice({ items, addToLog }) {
       setRequeuedWords(new Set()); // reset requeue guard for the next round
     }
     setQueuePos(nextPos);
-    setPhase("show"); setResponse(""); setAiComment(""); setPendingAI(null);
+    setPhase("show"); setResponse(""); setAiComment(""); setPendingAI(null); setPhonemesRevealed(0);
   };
-  const total = score.correct + score.semantic_cued + score.phonemic_cued + score.failed;
+  const total = score.correct + score.space_cued + score.semantic_cued + score.phonemic_cued + score.failed;
 
   return (
     <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20, maxWidth: 600, margin: "0 auto" }}>
       {pendingAI && (
         <CallAPI messages={pendingAI}
           onResult={t => { setAiComment(t); setLoadingAI(false); setPendingAI(null); }}
-          onError={() => { setLoadingAI(false); setPendingAI(null); }}
+          onError={() => { setLoadingAI(false); setPendingAI(null); next(); }}
         />
       )}
 
       {/* Scoreboard */}
       <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-        {[["Correct", "#4E8B80", score.correct], ["Cued", "#D4A843", score.semantic_cued + score.phonemic_cued], ["Needed help", "#C07070", score.failed]].map(([l, c, v]) => (
+        {[["Correct", "#4E8B80", score.correct], ["Cued", "#D4A843", score.space_cued + score.semantic_cued + score.phonemic_cued], ["Needed help", "#C07070", score.failed]].map(([l, c, v]) => (
           <div key={l} style={{ textAlign: "center", padding: "10px 18px", background: c + "18", borderRadius: 12, border: `2px solid ${c}40` }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: c }}>{v}</div>
             <div style={{ fontSize: 13, color: "#666" }}>{l}</div>
@@ -975,6 +943,7 @@ function Practice({ items, addToLog }) {
               if (diff >= 1) return { text: `📅 Overdue by ${Math.round(diff)} day${Math.round(diff) !== 1 ? "s" : ""}`, bg: "#FFF0E0", border: "#F0C070", color: "#8A5010" };
               if (lastResult === "correct" && streak >= 2) return { text: `⭐ Strong — ${streak} in a row`, bg: "#E8F4F2", border: "#B0D4CE", color: "#2D5A54" };
               if (lastResult === "correct") return { text: "✓ Correct last session", bg: "#E8F4F2", border: "#B0D4CE", color: "#2D5A54" };
+              if (lastResult === "space_cued") return { text: "🔡 Used sound starter last time", bg: "#F0F8FF", border: "#A0C8F0", color: "#1A3A5A" };
               if (lastResult === "semantic_cued") return { text: "💡 Needed a hint last time", bg: "#FFF8E8", border: "#F0E0A0", color: "#7A5A10" };
               if (lastResult === "phonemic_cued") return { text: "🔤 Needed sound cue last time", bg: "#FFF0E0", border: "#F0C070", color: "#8A5010" };
               if (lastResult === "failed")        return { text: "✗ Needed full reveal last time", bg: "#FFF0F0", border: "#F0B0B0", color: "#8A1010" };
@@ -1016,14 +985,37 @@ function Practice({ items, addToLog }) {
 
         {phase === "show" && (
           <>
+            {phonemesRevealed > 0 && (
+              <div style={{ background: "#F0F8FF", borderRadius: 12, padding: "12px 20px", margin: "16px 0 0",
+                border: "1px solid #A0C8F0", textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "#7090B0", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Sound starter</div>
+                <span style={{ fontSize: 28, fontWeight: 700, color: "#1A3A5A", letterSpacing: 6 }}>
+                  {item.word.slice(0, phonemesRevealed).toUpperCase()}
+                </span>
+                <span style={{ fontSize: 24, color: "#A0C8F0", fontWeight: 300 }}>...</span>
+              </div>
+            )}
             <input value={response} onChange={e => setResponse(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === " " && response === "") {
+                  e.preventDefault();
+                  setPhonemesRevealed(prev => Math.min(prev + 1, item.word.length));
+                }
+              }}
               placeholder="Type the name..."
-              style={{ margin: "20px 0", padding: "14px 20px", borderRadius: 12, border: "2px solid #D5CFC4",
+              style={{ margin: "20px 0", padding: "14px 20px", borderRadius: 12,
+                border: `2px solid ${phonemesRevealed > 0 ? "#A0C8F0" : "#D5CFC4"}`,
                 fontSize: 18, width: "100%", textAlign: "center", background: "#FFFDF9", color: "#2D3B36",
                 outline: "none", boxSizing: "border-box" }}
             />
+            {phonemesRevealed === 0 && (
+              <div style={{ fontSize: 12, color: "#BBB", marginTop: -14, marginBottom: 10 }}>
+                Press <kbd style={{ background: "#F0EDE8", border: "1px solid #D5CFC4", borderRadius: 4,
+                  padding: "1px 6px", fontSize: 11, fontFamily: "inherit" }}>Space</kbd> if you get stuck
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-              <PBtn color="#4E8B80" onClick={() => recordResponse("correct")}>✓ Got it!</PBtn>
+              <PBtn color="#4E8B80" onClick={() => recordResponse(phonemesRevealed > 0 ? "space_cued" : "correct")}>✓ Got it!</PBtn>
               <PBtn color="#D4A843" onClick={() => setPhase("semantic")}>💡 Give me a hint</PBtn>
               <PBtn color="#9B7FB8" onClick={() => setPhase("answer")}>👁 Show me</PBtn>
             </div>
@@ -1080,13 +1072,16 @@ function Practice({ items, addToLog }) {
       {(loadingAI || aiComment) && (
         <div style={{ background: "#F0F7F5", borderRadius: 14, padding: "16px 20px", border: "1px solid #B0D4CE" }}>
           <div style={{ fontSize: 13, color: "#4E8B80", fontWeight: 600, marginBottom: 6 }}>🧠 Dr. Aria</div>
-          {loadingAI ? <ThinkingDots /> : <div style={{ fontSize: 16, color: "#2D3B36", lineHeight: 1.6 }}>{aiComment}</div>}
-          {aiComment && (
-            <button onClick={next}
-              style={{ marginTop: 12, padding: "10px 20px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 15 }}>
-              Next word →
-            </button>
-          )}
+          {loadingAI
+            ? <ThinkingDots />
+            : <>
+                {aiComment && <div style={{ fontSize: 16, color: "#2D3B36", lineHeight: 1.6, marginBottom: 12 }}>{aiComment}</div>}
+                <button onClick={next}
+                  style={{ marginTop: 4, padding: "10px 20px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 15 }}>
+                  Next word →
+                </button>
+              </>
+          }
         </div>
       )}
     </div>

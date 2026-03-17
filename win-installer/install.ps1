@@ -14,7 +14,9 @@ $ErrorActionPreference = "Stop"
 
 # ── Resolve script directory ──────────────────────────────────────────────────
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BundleSrc  = Join-Path $ScriptDir "ppa-speech-therapy-bundle.jsx"
+$BundleSrc      = Join-Path $ScriptDir "ppa-speech-therapy-bundle.jsx"
+$UserGuideSrc   = Join-Path $ScriptDir "ppa-speech-therapy-user-guide.pdf"
+$TechDocsSrc    = Join-Path $ScriptDir "ppa-speech-therapy-docs.pdf"
 
 # ── Console helpers ───────────────────────────────────────────────────────────
 function Write-Hr {
@@ -52,10 +54,16 @@ Write-Inf "It creates a Vite project, configures your Anthropic API key,"
 Write-Inf "and adds a shortcut to your Desktop and Start Menu."
 Write-Host ""
 
-# ── Verify bundle ─────────────────────────────────────────────────────────────
+# ── Verify bundle and docs ────────────────────────────────────────────────────
 if (-not (Test-Path $BundleSrc)) {
     Write-Err "ppa-speech-therapy-bundle.jsx not found next to the installer."
     Write-Inf "Please make sure all installer files are in the same folder."
+    Pause-Exit 1
+}
+if (-not (Test-Path $UserGuideSrc) -or -not (Test-Path $TechDocsSrc)) {
+    Write-Err "PDF documentation files not found next to the installer."
+    Write-Inf "Please make sure ppa-speech-therapy-user-guide.pdf and ppa-speech-therapy-docs.pdf"
+    Write-Inf "are in the same folder as the installer and try again."
     Pause-Exit 1
 }
 
@@ -193,6 +201,11 @@ Write-Ok "Vite project created"
 Copy-Item $BundleSrc (Join-Path $InstallDir "src\ppa-speech-therapy-bundle.jsx") -Force
 Write-Ok "Bundle copied to src\"
 
+# ── Copy documentation PDFs ───────────────────────────────────────────────────
+Copy-Item $UserGuideSrc (Join-Path $InstallDir "ppa-speech-therapy-user-guide.pdf") -Force
+Copy-Item $TechDocsSrc  (Join-Path $InstallDir "ppa-speech-therapy-docs.pdf") -Force
+Write-Ok "Documentation PDFs copied"
+
 # ── Patch App.jsx ─────────────────────────────────────────────────────────────
 @"
 import App from './ppa-speech-therapy-bundle.jsx';
@@ -200,19 +213,7 @@ export default App;
 "@ | Set-Content (Join-Path $InstallDir "src\App.jsx") -Encoding UTF8
 Write-Ok "src\App.jsx configured"
 
-# ── Patch CallAPI headers ─────────────────────────────────────────────────────
-$bundlePath = Join-Path $InstallDir "src\ppa-speech-therapy-bundle.jsx"
-$bundleContent = Get-Content $bundlePath -Raw -Encoding UTF8
-$oldHeaders = 'headers: { "Content-Type": "application/json" },'
-$newHeaders = 'headers: { "Content-Type": "application/json", "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },'
-
-if ($bundleContent.Contains($oldHeaders)) {
-    $bundleContent = $bundleContent.Replace($oldHeaders, $newHeaders)
-    [System.IO.File]::WriteAllText($bundlePath, $bundleContent, [System.Text.Encoding]::UTF8)
-    Write-Ok "API headers patched in bundle"
-} else {
-    Write-Warn "API header pattern not found — bundle may already be patched."
-}
+# API headers are now baked into fetchAnthropicApi() in shared.jsx — no bundle patch needed.
 
 # ── Write .env ────────────────────────────────────────────────────────────────
 @"
