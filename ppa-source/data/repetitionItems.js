@@ -1,5 +1,5 @@
 // Default repetition drill levels for the Repetition module
-// Used by: RepetitionModule (ppa-speech-therapy_3_final.jsx)
+// Used by: RepetitionModule (ppa-speech-therapy_main.jsx)
 // localStorage key: ppa_repetition_levels
 
 export const REPETITION_LEVELS = [
