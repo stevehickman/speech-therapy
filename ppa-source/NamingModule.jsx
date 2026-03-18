@@ -10,6 +10,12 @@ import {
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
 import { dictLoadNamingItems, dictSaveNamingItems, dictBuildSeed, isImageGraphic } from "./data/dictionary.js";
+import meSpeak from "mespeak";
+import meSpeakConfig from "mespeak/src/mespeak_config.json";
+import enVoice from "mespeak/voices/en/en-us.json";
+
+if (!meSpeak.isConfigLoaded()) meSpeak.loadConfig(meSpeakConfig);
+if (!meSpeak.isVoiceLoaded())  meSpeak.loadVoice(enVoice);
 
 const ADMIN_PIN   = "1234"; // change this to set a different PIN
 
@@ -228,6 +234,41 @@ const EMOJI_SETS = {
   "👤 People":   ["👨","👩","👦","👧","👶","🧓","👩‍⚕️","👨‍🍳","👩‍🏫","👮","🧑‍🎨","👩‍💼","🧑‍🔧","👷","🧑‍🌾"],
   "🎨 Misc":     ["❤️","⭐","🎵","🎈","🎁","🏆","🔔","💡","🔥","💧","🌀","⚡","🎯","🧩","🎲"],
 };
+
+// ── Phoneme hint utilities ─────────────────────────────────────────────────────
+// Digraphs and trigraphs that form a single grapheme group; checked longest-first.
+// Used for the letter-reveal display (audio off: one group per Space press).
+const TRIGRAPHS = ["thr", "shr", "spl", "spr", "str", "scr", "sch", "chr", "phr"];
+const DIGRAPHS  = ["sh", "ch", "th", "ph", "wh", "ng", "qu", "gh", "kn", "wr", "gn", "ck", "mb", "dg"];
+
+// Returns the letters (1–3) that make up the next grapheme group at position `pos`.
+function getNextPhoneme(word, pos) {
+  const slice = word.toLowerCase().slice(pos);
+  for (const tri of TRIGRAPHS) { if (slice.startsWith(tri)) return tri; }
+  for (const di  of DIGRAPHS)  { if (slice.startsWith(di))  return di;  }
+  return slice[0] || "";
+}
+
+// Vowel digraphs and trigraphs checked longest-first for audio-on advancement.
+const VOWEL_GROUPS = ['igh', 'ough', 'augh', 'ai', 'ay', 'ea', 'ee', 'ei', 'ey',
+  'ie', 'oa', 'oe', 'oi', 'oo', 'ou', 'ow', 'ue', 'ui', 'au', 'aw', 'ew'];
+const LETTER_VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);
+
+// Returns the character position after the next vowel (group) starting from startPos.
+// Used in audio-on mode to determine how far to advance and what text to speak.
+function findNextVowelEnd(word, startPos) {
+  const lower = word.toLowerCase();
+  for (let i = startPos; i < lower.length; i++) {
+    if (LETTER_VOWELS.has(lower[i])) {
+      for (const vg of VOWEL_GROUPS) {
+        if (lower.startsWith(vg, i)) return i + vg.length;
+      }
+      return i + 1;
+    }
+  }
+  return word.length;  // no more vowels — reveal the rest
+}
+
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 // Resize + compress a File/Blob to a base64 JPEG data-URL via an offscreen canvas.
@@ -830,6 +871,9 @@ function Practice({ items, addToLog }) {
   const [response,  setResponse]  = useState("");
   const [score,     setScore]     = useState({ correct: 0, space_cued: 0, semantic_cued: 0, phonemic_cued: 0, failed: 0 });
   const [phonemesRevealed, setPhonemesRevealed] = useState(0);
+  const [audioHintsOn, setAudioHintsOn] = useState(
+    () => localStorage.getItem('ppa_naming_audio_hints') !== 'false'
+  );
   const [aiComment, setAiComment] = useState("");
   const [loadingAI, setLoadingAI] = useState(false);
   const [pendingAI, setPendingAI] = useState(null);
@@ -842,6 +886,7 @@ function Practice({ items, addToLog }) {
   const item    = items[itemIdx] ?? items[0];
   const graphic = item.graphic ?? item.emoji;
   const isImg   = isImageGraphic(graphic);
+
 
   const getAIFeedback = (attempt, cueing, word) => {
     setLoadingAI(true);
@@ -999,7 +1044,30 @@ function Practice({ items, addToLog }) {
               onKeyDown={e => {
                 if (e.key === " " && response === "") {
                   e.preventDefault();
-                  setPhonemesRevealed(prev => Math.min(prev + 1, item.word.length));
+                  if (phonemesRevealed >= item.word.length) return;
+                  if (audioHintsOn) {
+                    // Audio on: advance display to the next vowel boundary, then speak the
+                    // displayed prefix PLUS the immediately following consonant group from
+                    // the real word.  The trailing consonant places the vowel in a closed-
+                    // syllable context so eSpeak uses the correct in-word allophone:
+                    //   "glas"  → short /æ/  (not the schwa eSpeak assigns to bare "gla")
+                    //   "chair" → /tʃɛr/     (not the /tʃaɪ/ eSpeak assigns to bare "chai")
+                    const newCharCount = findNextVowelEnd(item.word, phonemesRevealed);
+                    const anchor = newCharCount < item.word.length
+                      ? getNextPhoneme(item.word, newCharCount)   // next consonant group
+                      : "";
+                    const displayCount = newCharCount + anchor.length;
+                    setPhonemesRevealed(displayCount);
+                    const speakText = item.word.slice(0, displayCount).toLowerCase();
+                    meSpeak.resetQueue();
+                    meSpeak.speak(speakText, { speed: 130 });
+                  } else {
+                    // Audio off: reveal one grapheme group at a time, no speech.
+                    const grapheme = getNextPhoneme(item.word, phonemesRevealed);
+                    if (grapheme && phonemesRevealed + grapheme.length <= item.word.length) {
+                      setPhonemesRevealed(prev => prev + grapheme.length);
+                    }
+                  }
                 }
               }}
               placeholder="Type the name..."
@@ -1008,12 +1076,24 @@ function Practice({ items, addToLog }) {
                 fontSize: 18, width: "100%", textAlign: "center", background: "#FFFDF9", color: "#2D3B36",
                 outline: "none", boxSizing: "border-box" }}
             />
-            {phonemesRevealed === 0 && (
-              <div style={{ fontSize: 12, color: "#BBB", marginTop: -14, marginBottom: 10 }}>
-                Press <kbd style={{ background: "#F0EDE8", border: "1px solid #D5CFC4", borderRadius: 4,
-                  padding: "1px 6px", fontSize: 11, fontFamily: "inherit" }}>Space</kbd> if you get stuck
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+              marginTop: -14, marginBottom: 10, minHeight: 22 }}>
+              {phonemesRevealed === 0 && (
+                <div style={{ fontSize: 12, color: "#BBB" }}>
+                  Press <kbd style={{ background: "#F0EDE8", border: "1px solid #D5CFC4", borderRadius: 4,
+                    padding: "1px 6px", fontSize: 11, fontFamily: "inherit" }}>Space</kbd> for a hint
+                </div>
+              )}
+              <div style={{ marginLeft: "auto" }}>
+                <button
+                  title={audioHintsOn ? "Sound hints on — click to turn off" : "Sound hints off — click to turn on"}
+                  onClick={() => { const v = !audioHintsOn; setAudioHintsOn(v); localStorage.setItem('ppa_naming_audio_hints', String(v)); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16,
+                    opacity: audioHintsOn ? 1 : 0.35, padding: "0 2px" }}>
+                  🔊
+                </button>
               </div>
-            )}
+            </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
               <PBtn color="#4E8B80" onClick={() => recordResponse(phonemesRevealed > 0 ? "space_cued" : "correct")}>✓ Got it!</PBtn>
               <PBtn color="#D4A843" onClick={() => setPhase("semantic")}>💡 Give me a hint</PBtn>

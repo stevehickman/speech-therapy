@@ -217,6 +217,10 @@ cd "$INSTALL_DIR"
 "$NPM_CMD" install --silent 2>&1 | tail -3 | sed 's/^/     /' || true
 ok "npm packages installed"
 
+inf "Installing speech synthesis package (mespeak)…"
+"$NPM_CMD" install mespeak --silent 2>&1 | tail -3 | sed 's/^/     /' || true
+ok "Speech synthesis package installed"
+
 # ─────────────────────────────────────────────────────────────────────────────
 hdr "Step 5 of 5 — Creating Desktop launcher"
 # ─────────────────────────────────────────────────────────────────────────────

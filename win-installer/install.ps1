@@ -243,6 +243,10 @@ Write-Inf "Running npm install (this may take a minute)…"
 & $NpmCmd install --silent 2>&1 | Select-Object -Last 4 | ForEach-Object { Write-Inf $_ }
 Write-Ok "npm packages installed"
 
+Write-Inf "Installing speech synthesis package (mespeak)…"
+& $NpmCmd install mespeak --silent 2>&1 | Select-Object -Last 4 | ForEach-Object { Write-Inf $_ }
+Write-Ok "Speech synthesis package installed"
+
 # =============================================================================
 Write-Hdr "Step 5 of 5 — Creating Desktop shortcut & Start Menu entry"
 # =============================================================================
