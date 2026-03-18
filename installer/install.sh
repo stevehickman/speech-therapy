@@ -172,6 +172,7 @@ cd "$INSTALL_DIR"
 ok "Vite project created"
 
 # ── Copy bundle ───────────────────────────────────────────────────────────────
+mkdir -p "$INSTALL_DIR/src"
 cp "$BUNDLE_SRC" "$INSTALL_DIR/src/ppa-speech-therapy-bundle.jsx"
 ok "Bundle copied to src/"
 

@@ -198,6 +198,7 @@ Set-Location $InstallDir
 Write-Ok "Vite project created"
 
 # ── Copy bundle ───────────────────────────────────────────────────────────────
+New-Item -ItemType Directory -Path (Join-Path $InstallDir "src") -Force | Out-Null
 Copy-Item $BundleSrc (Join-Path $InstallDir "src\ppa-speech-therapy-bundle.jsx") -Force
 Write-Ok "Bundle copied to src\"
 
