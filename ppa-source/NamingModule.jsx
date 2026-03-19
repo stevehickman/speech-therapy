@@ -575,6 +575,7 @@ function AdminPanel({ items, onUpdate, onClose }) {
   const [mode, setMode]         = useState("list");   // list | add | edit
   const [editTarget, setEditTarget] = useState(null); // item being edited
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [inlineCatEdit, setInlineCatEdit] = useState(null); // { id, value }
   const [showExport,   setShowExport]   = useState(false);
   const [showReexport, setShowReexport] = useState(false);
   const [importToast,  setImportToast]  = useState(null); // {count, filename}
@@ -664,6 +665,13 @@ function AdminPanel({ items, onUpdate, onClose }) {
     onClose();
   };
 
+  const handleInlineCatSave = () => {
+    if (!inlineCatEdit) return;
+    const { id, value } = inlineCatEdit;
+    onUpdate(items.map(it => it.id !== id ? it : { ...it, category: value.trim().toLowerCase() }));
+    setInlineCatEdit(null);
+  };
+
   const isImg = (g) => isImageGraphic(g);
 
   return (
@@ -737,9 +745,26 @@ function AdminPanel({ items, onUpdate, onClose }) {
                   {/* Info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 16, color: "#2D3B36" }}>{item.word}</div>
-                    <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>
-                      {item.category} · #{idx + 1}
-                      {item.id?.startsWith("custom") && <span style={{ marginLeft: 8, color: "#9B7FB8", fontWeight: 700 }}>• custom</span>}
+                    <div style={{ fontSize: 13, color: "#888", marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {inlineCatEdit !== null && inlineCatEdit.id === item.id ? (
+                        <input
+                          autoFocus
+                          value={inlineCatEdit.value}
+                          onChange={e => setInlineCatEdit(ic => ({ ...ic, value: e.target.value }))}
+                          onKeyDown={e => { if (e.key === "Enter") handleInlineCatSave(); if (e.key === "Escape") setInlineCatEdit(null); }}
+                          onBlur={handleInlineCatSave}
+                          style={{ padding: "2px 8px", borderRadius: 6, border: "2px solid #4E8B80", fontSize: 13, outline: "none", width: 120 }}
+                        />
+                      ) : (
+                        <span
+                          onClick={() => setInlineCatEdit({ id: item.id, value: item.category ?? "" })}
+                          title="Click to edit category"
+                          style={{ cursor: "pointer", borderBottom: "1px dotted #aaa", color: item.category ? "#555" : "#bbb" }}>
+                          {item.category || "no category"}
+                        </span>
+                      )}
+                      <span>· #{idx + 1}</span>
+                      {item.id?.startsWith("custom") && <span style={{ color: "#9B7FB8", fontWeight: 700 }}>• custom</span>}
                     </div>
                     <div style={{ fontSize: 12, color: "#999", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       💡 {item.clue_semantic}
