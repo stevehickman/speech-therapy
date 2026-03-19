@@ -21,7 +21,7 @@
  *   outputFile = ppa-speech-therapy-bundle.jsx
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync } from "fs";
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "fs";
 import { execSync } from "child_process";
 import { resolve, relative, dirname, join, extname } from "path";
 import { fileURLToPath } from "url";
@@ -278,17 +278,27 @@ console.log();
 // Runs tsx to do a real JSX parse. Catches syntax errors that static analysis
 // misses, e.g. bare newline characters embedded inside string literals.
 
-const tsxBin = "/home/claude/.npm-global/bin/tsx";
+const tsxCandidates = [
+  resolve(rootDir, "../node_modules/.bin/tsx"),
+  resolve(rootDir, "node_modules/.bin/tsx"),
+  "/Users/stevehickman/.nvm/versions/node/v24.14.0/bin/tsx",
+  "/home/claude/.npm-global/bin/tsx",
+];
+const tsxBin = tsxCandidates.find(p => existsSync(p));
 
-try {
-  execSync(`${tsxBin} --no-cache ${outputPath}`, { timeout: 30_000, stdio: "pipe" });
-  console.log("✅  JSX parse OK (tsx)\n");
-} catch (err) {
-  const stderr = err.stderr?.toString() ?? "";
-  const stdout = err.stdout?.toString() ?? "";
-  const msg = (stderr || stdout || err.message)
-    .split("\n").filter(Boolean).slice(0, 8).join("\n");
-  console.error("\n❌  JSX PARSE ERROR — fix source files and re-run bundle.js");
-  console.error(msg + "\n");
-  process.exit(1);
+if (!tsxBin) {
+  console.warn("⚠️  tsx not found — skipping JSX parse verification\n");
+} else {
+  try {
+    execSync(`${tsxBin} --no-cache ${outputPath}`, { timeout: 30_000, stdio: "pipe" });
+    console.log("✅  JSX parse OK (tsx)\n");
+  } catch (err) {
+    const stderr = err.stderr?.toString() ?? "";
+    const stdout = err.stdout?.toString() ?? "";
+    const msg = (stderr || stdout || err.message)
+      .split("\n").filter(Boolean).slice(0, 8).join("\n");
+    console.error("\n❌  JSX PARSE ERROR — fix source files and re-run bundle.js");
+    console.error(msg + "\n");
+    process.exit(1);
+  }
 }
