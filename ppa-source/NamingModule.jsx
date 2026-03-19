@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { NAMING_ITEMS } from "./data/namingItems.js";
 import { CLAUDE_MODEL, SYSTEM_PROMPT } from "./data/config.js";
-import { CallAPI, ThinkingDots } from "./shared.jsx";
+import { CallAPI, ThinkingDots, checkDuplicate, DuplicateConflictModal } from "./shared.jsx";
 import {
   PPA_EXT,
   ppaGetSnapshots, ppaFilesForModule, ppaAddKnownFile,
@@ -481,7 +481,7 @@ function GraphicPicker({ current, onChange }) {
 }
 
 // ── Item form (used for both Add and Edit) ─────────────────────────────────────
-function ItemForm({ initial, onSave, onCancel }) {
+function ItemForm({ initial, onSave, onCancel, dupWarning }) {
   const blank = { word: "", category: "", graphic: "🖼️", clue_semantic: "", clue_phonemic: "" };
   const [form, setForm] = useState(initial ?? blank);
   const [showPicker, setShowPicker] = useState(false);
@@ -528,6 +528,7 @@ function ItemForm({ initial, onSave, onCancel }) {
 
       {/* Word */}
       <div>
+        {dupWarning && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600, marginBottom: 4 }}>Duplicate — ignored</div>}
         <label style={labelStyle}>Word *</label>
         <input value={form.word} onChange={e => set("word", e.target.value)} placeholder="e.g. apple" style={fieldStyle} />
       </div>
@@ -579,6 +580,10 @@ function AdminPanel({ items, onUpdate, onClose }) {
   const [showExport,   setShowExport]   = useState(false);
   const [showReexport, setShowReexport] = useState(false);
   const [importToast,  setImportToast]  = useState(null); // {count, filename}
+  const [conflictState, setConflictState] = useState(null); // { newItem, match, conflictFields }
+  const [dupWarning, setDupWarning] = useState(false);
+  const [formResetKey, setFormResetKey] = useState(0);
+  const showDup = () => { setDupWarning(true); setTimeout(() => { setDupWarning(false); setFormResetKey(k => k + 1); }, 300); };
 
   const MODULE_ID    = "naming";
   const isBuiltin    = item => item.id?.startsWith("seed-");
@@ -586,12 +591,34 @@ function AdminPanel({ items, onUpdate, onClose }) {
   const getLabel     = it => { const g = it.graphic ?? it.emoji ?? ""; const prefix = isImageGraphic(g) ? "🖼️" : g; return `${prefix} ${it.word}`.trim(); };
 
   const handleAdd = (newItem) => {
-    const updated = [...items, { ...newItem, id: `custom-${Date.now()}` }];
-    onUpdate(updated);
+    const NAMING_FIELDS = ["graphic", "category", "clue_semantic", "clue_phonemic"];
+    const result = checkDuplicate(items, newItem, it => it.word, NAMING_FIELDS);
+    if (result.action === "ignore") { showDup(); return; }
+    if (result.action === "update") {
+      onUpdate(items.map(it => it.id === result.match.id ? { ...result.merged, id: it.id } : it));
+      setMode("list"); return;
+    }
+    if (result.action === "conflict") {
+      setConflictState({ newItem, match: result.match, conflictFields: result.conflictFields });
+      return;
+    }
+    onUpdate([...items, { ...newItem, id: `custom-${Date.now()}` }]);
     setMode("list");
   };
 
   const handleEdit = (updated) => {
+    const NAMING_FIELDS = ["graphic", "category", "clue_semantic", "clue_phonemic"];
+    const others = items.filter(it => it.id !== editTarget.id);
+    const result = checkDuplicate(others, updated, it => it.word, NAMING_FIELDS);
+    if (result.action === "ignore") { showDup(); return; }
+    if (result.action === "update") {
+      onUpdate(items.map(it => it.id === result.match.id ? { ...result.merged, id: it.id } : it));
+      setMode("list"); setEditTarget(null); return;
+    }
+    if (result.action === "conflict") {
+      setConflictState({ newItem: updated, match: result.match, conflictFields: result.conflictFields });
+      return;
+    }
     onUpdate(items.map(it => it.id === editTarget.id ? { ...updated, id: editTarget.id } : it));
     setMode("list");
     setEditTarget(null);
@@ -677,6 +704,19 @@ function AdminPanel({ items, onUpdate, onClose }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Dialogs */}
+      {conflictState && (
+        <DuplicateConflictModal
+          itemLabel={conflictState.newItem.word}
+          existing={conflictState.match}
+          incoming={conflictState.newItem}
+          conflictFields={conflictState.conflictFields}
+          onResolve={merged => {
+            onUpdate(items.map(it => it.id === conflictState.match.id ? merged : it));
+            setConflictState(null); setMode("list");
+          }}
+          onCancel={() => setConflictState(null)}
+        />
+      )}
       {showExport && (
         <PpaExportDialog moduleId={MODULE_ID} items={customItems} getLabel={getLabel}
           onExport={handleExport} onClose={() => setShowExport(false)} />
@@ -809,7 +849,7 @@ function AdminPanel({ items, onUpdate, onClose }) {
         {mode === "add" && (
           <>
             <h3 style={{ margin: "0 0 16px", color: "#2D3B36" }}>Add new item</h3>
-            <ItemForm onSave={handleAdd} onCancel={() => setMode("list")} />
+            <ItemForm key={formResetKey} onSave={handleAdd} onCancel={() => setMode("list")} dupWarning={dupWarning} />
           </>
         )}
 
@@ -820,9 +860,11 @@ function AdminPanel({ items, onUpdate, onClose }) {
               Edit: <em>{editTarget.word}</em>
             </h3>
             <ItemForm
+              key={formResetKey}
               initial={{ ...editTarget, graphic: editTarget.graphic ?? editTarget.emoji }}
               onSave={handleEdit}
               onCancel={() => { setMode("list"); setEditTarget(null); }}
+              dupWarning={dupWarning}
             />
           </>
         )}

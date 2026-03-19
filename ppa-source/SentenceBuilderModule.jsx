@@ -13,7 +13,7 @@ import {
 } from "./ExportImportSystem.jsx";
 import { useDictionaryLookup, isImageGraphic, dictGetEntry, dictAddWord } from "./data/dictionary.js";
 import { CLAUDE_MODEL } from "./data/config.js";
-import { fetchAnthropicApi } from "./shared.jsx";
+import { fetchAnthropicApi, checkDuplicate, DuplicateConflictModal } from "./shared.jsx";
 
 // ---- SENTENCE BUILDER ----
 function SentenceBuilderModule({ addToLog }) {
@@ -86,6 +86,9 @@ function SentenceBuilderModule({ addToLog }) {
   const saveLibrary = (next) => { setLibrary(next); try { localStorage.setItem(SB_LIB_KEY, JSON.stringify(next)); } catch {} };
   useEffect(() => { saveLibrary(library); }, []); // seed localStorage on mount
   const [libraryTab, setLibraryTab] = useState("All");
+  const [sbConflict, setSbConflict] = useState(null); // { newItem, match, conflictFields }
+  const [dupWarning, setDupWarning] = useState(false);
+  const showDup = (revert) => { setDupWarning(true); setTimeout(() => { setDupWarning(false); revert?.(); }, 300); };
   const [speaking, setSpeaking] = useState(false);
   const [showExportLib,   setShowExportLib]   = useState(false);
   const [showReexportLib, setShowReexportLib] = useState(false);
@@ -150,6 +153,17 @@ function SentenceBuilderModule({ addToLog }) {
   const saveSentence = () => {
     const text = buildSentenceText();
     if (!text) return;
+    const newEntry = { text, type: sentenceType };
+    const result = checkDuplicate(library, newEntry, it => it.text, ["type"]);
+    if (result.action === "ignore") { showDup(() => setWords([])); return; }
+    if (result.action === "update") {
+      saveLibrary(library.map(it => it.id === result.match.id ? { ...result.merged, id: it.id } : it));
+      return;
+    }
+    if (result.action === "conflict") {
+      setSbConflict({ newItem: newEntry, match: result.match, conflictFields: result.conflictFields });
+      return;
+    }
     saveLibrary([...library, { text, type: sentenceType, time: new Date().toLocaleTimeString(), id: Date.now() }]);
     addToLog && addToLog({ type: "sentence_builder", content: text, time: new Date().toLocaleTimeString() });
   };
@@ -401,6 +415,20 @@ function SentenceBuilderModule({ addToLog }) {
         @keyframes sbPulse { 0%,100% { opacity:0.6; } 50% { opacity:1; } }
       `}</style>
 
+      {sbConflict && (
+        <DuplicateConflictModal
+          itemLabel={sbConflict.match.text}
+          existing={sbConflict.match}
+          incoming={sbConflict.newItem}
+          conflictFields={sbConflict.conflictFields}
+          onResolve={merged => {
+            saveLibrary(library.map(it => it.id === sbConflict.match.id ? merged : it));
+            setSbConflict(null);
+          }}
+          onCancel={() => setSbConflict(null)}
+        />
+      )}
+
       {/* Sentence display */}
       <div style={{ padding: "16px 20px 0 20px" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
@@ -461,6 +489,7 @@ function SentenceBuilderModule({ addToLog }) {
 
         {/* Sentence text preview */}
         <div style={{ marginTop: 6, paddingLeft: 4 }}>
+          {dupWarning && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600, marginBottom: 4 }}>Duplicate — ignored</div>}
           <span style={{ fontSize: 13, color: "#888", fontStyle: "italic" }}>
             {sentenceText || "…"}
           </span>

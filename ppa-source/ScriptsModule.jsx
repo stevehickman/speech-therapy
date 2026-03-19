@@ -8,6 +8,7 @@ import {
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
 import { AdminPinEntry } from "./AdminPinEntry.jsx";
+import { isDuplicateString } from "./shared.jsx";
 
 export default function ScriptsModule() {
   // ── data ────────────────────────────────────────────────────────────────────
@@ -58,6 +59,8 @@ export default function ScriptsModule() {
   const [showExport,   setShowExport]   = useState(false);
   const [showReexport, setShowReexport] = useState(false);
   const [importToast,  setImportToast]  = useState(null);
+  const [dupWarning, setDupWarning] = useState(null); // null | 'phrase' | 'sit' | 'edit-phrase' | 'edit-sit'
+  const showDup = (key, revert) => { setDupWarning(key); setTimeout(() => { setDupWarning(null); revert?.(); }, 300); };
 
   const scCustom    = () => scripts.filter(s => !s._builtin);
   const scGetLabel  = s => s.situation;
@@ -164,6 +167,7 @@ export default function ScriptsModule() {
   // ── admin helpers ───────────────────────────────────────────────────────────
   const addPhrase = (si) => {
     if (!newPhrase.trim()) return;
+    if (isDuplicateString(scripts[si].phrases, newPhrase)) { showDup('phrase', () => setNewPhrase("")); return; }
     const next = scripts.map((s, i) => i !== si ? s : { ...s, phrases: [...s.phrases, newPhrase.trim()] });
     saveScripts(next); setNewPhrase("");
   };
@@ -174,11 +178,14 @@ export default function ScriptsModule() {
   const saveEditPhrase = () => {
     if (!editPhraseText.trim() || !editingPhrase) return;
     const { sitIdx, phraseIdx } = editingPhrase;
+    const others = scripts[sitIdx].phrases.filter((_, j) => j !== phraseIdx);
+    if (isDuplicateString(others, editPhraseText)) { showDup('edit-phrase', () => setEditPhraseText(scripts[sitIdx].phrases[phraseIdx])); return; }
     const next = scripts.map((s, i) => i !== sitIdx ? s : { ...s, phrases: s.phrases.map((p, j) => j === phraseIdx ? editPhraseText.trim() : p) });
     saveScripts(next); setEditingPhrase(null); setEditPhraseText("");
   };
   const addSituation = () => {
     if (!newSitName.trim()) return;
+    if (isDuplicateString(scripts.map(s => s.situation), newSitName)) { showDup('sit', () => setNewSitName("")); return; }
     saveScripts([...scripts, { situation: newSitName.trim(), phrases: [], _id: `sc-custom-${Date.now()}` }]);
     setNewSitName(""); setAddingSit(false);
   };
@@ -191,6 +198,8 @@ export default function ScriptsModule() {
   };
   const saveSitName = () => {
     if (!editSitNameText.trim()) return;
+    const otherNames = scripts.filter((_, i) => i !== editingSitName).map(s => s.situation);
+    if (isDuplicateString(otherNames, editSitNameText)) { showDup('edit-sit', () => setEditSitNameText(scripts[editingSitName].situation)); return; }
     const next = scripts.map((s, i) => i !== editingSitName ? s : { ...s, situation: editSitNameText.trim() });
     saveScripts(next); setEditingSitName(null);
   };
@@ -248,12 +257,15 @@ export default function ScriptsModule() {
 
               {/* Add new situation */}
               {addingSit && (
-                <div style={{ display: "flex", gap: 8, background: "#F0F7F5", borderRadius: 12, padding: "12px 16px", border: "1px solid #B0D4CE" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "#F0F7F5", borderRadius: 12, padding: "12px 16px", border: "1px solid #B0D4CE" }}>
+                  {dupWarning === 'sit' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
+                  <div style={{ display: "flex", gap: 8 }}>
                   <input value={newSitName} onChange={e => setNewSitName(e.target.value)} onKeyDown={e => e.key === "Enter" && addSituation()}
                     placeholder="Situation name (e.g. At the pharmacy)" autoFocus
                     style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #B0D4CE", fontSize: 14, outline: "none" }} />
                   <button onClick={addSituation} style={{ padding: "8px 16px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Add</button>
                   <button onClick={() => setAddingSit(false)} style={{ padding: "8px 12px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 8, cursor: "pointer", color: "#666" }}>Cancel</button>
+                  </div>
                 </div>
               )}
 
@@ -264,6 +276,7 @@ export default function ScriptsModule() {
                   <div style={{ padding: "12px 18px", background: "#F5F0E8", borderBottom: "1px solid #E8E0D0", display: "flex", alignItems: "center", gap: 10 }}>
                     {editingSitName === adminSit ? (
                       <>
+                        {dupWarning === 'edit-sit' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
                         <input value={editSitNameText} onChange={e => setEditSitNameText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveSitName(); if (e.key === "Escape") setEditingSitName(null); }}
                           autoFocus style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 14, outline: "none" }} />
                         <button onClick={saveSitName} style={{ padding: "5px 12px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>Save</button>
@@ -289,6 +302,7 @@ export default function ScriptsModule() {
                     <div key={pi} style={{ padding: "12px 18px", borderBottom: "1px solid #F0EDE8", display: "flex", alignItems: "center", gap: 10 }}>
                       {editingPhrase?.sitIdx === adminSit && editingPhrase?.phraseIdx === pi ? (
                         <>
+                          {dupWarning === 'edit-phrase' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
                           <input value={editPhraseText} onChange={e => setEditPhraseText(e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") saveEditPhrase(); if (e.key === "Escape") setEditingPhrase(null); }}
                             autoFocus style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 15, outline: "none" }} />
@@ -308,12 +322,15 @@ export default function ScriptsModule() {
                   ))}
 
                   {/* Add phrase */}
-                  <div style={{ padding: "12px 18px", display: "flex", gap: 8, background: "#F8F6F2" }}>
+                  <div style={{ padding: "12px 18px", display: "flex", flexDirection: "column", gap: 8, background: "#F8F6F2" }}>
+                    {dupWarning === 'phrase' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
+                    <div style={{ display: "flex", gap: 8 }}>
                     <input value={newPhrase} onChange={e => setNewPhrase(e.target.value)} onKeyDown={e => e.key === "Enter" && addPhrase(adminSit)}
                       placeholder={`Add phrase for "${scripts[adminSit].situation}"...`}
                       style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 14, outline: "none", background: "#FFFDF9" }} />
                     <button onClick={() => addPhrase(adminSit)}
                       style={{ padding: "8px 18px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>Add</button>
+                    </div>
                   </div>
                 </div>
               )}

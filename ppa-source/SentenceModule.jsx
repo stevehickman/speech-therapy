@@ -8,7 +8,7 @@ import {
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
 import { AdminPinEntry } from "./AdminPinEntry.jsx";
-import { CallAPI, ThinkingDots, Btn } from "./shared.jsx";
+import { CallAPI, ThinkingDots, Btn, checkDuplicate, DuplicateConflictModal } from "./shared.jsx";
 
 export default function SentenceModule({ addToLog }) {
   // ── data ────────────────────────────────────────────────────────────────────
@@ -62,6 +62,9 @@ export default function SentenceModule({ addToLog }) {
   const [showReexport, setShowReexport] = useState(false);
   const [importToast,  setImportToast]  = useState(null);
   const [adminTab,     setAdminTab]     = useState("completion");
+  const [smConflict,   setSmConflict]   = useState(null); // { newItem, match, conflictFields, itemType }
+  const [dupWarning, setDupWarning] = useState(null); // null | 'comp' | 'con' | 'edit-comp' | 'edit-con'
+  const showDup = (key, revert) => { setDupWarning(key); setTimeout(() => { setDupWarning(null); revert?.(); }, 300); };
 
   const smCustomCompl  = () => completions.filter(c => !c._builtin);
   const smCustomConstr = () => constructions.filter(c => !c._builtin);
@@ -133,13 +136,36 @@ export default function SentenceModule({ addToLog }) {
   // ── admin helpers — completions ─────────────────────────────────────────────
   const addCompletion = () => {
     if (!newPrompt.trim()) return;
-    saveCompletions([...completions, { prompt: newPrompt.trim(), hint: newHint.trim() || "open", _id: `smc-custom-${Date.now()}` }]);
+    const newComp = { prompt: newPrompt.trim(), hint: newHint.trim() || "open" };
+    const result = checkDuplicate(completions, newComp, it => it.prompt, ["hint"]);
+    if (result.action === "ignore") { showDup('comp', () => { setNewPrompt(""); setNewHint(""); }); return; }
+    if (result.action === "update") {
+      saveCompletions(completions.map(c => c._id === result.match._id ? { ...result.merged, _id: c._id } : c));
+      setNewPrompt(""); setNewHint(""); return;
+    }
+    if (result.action === "conflict") {
+      setSmConflict({ newItem: newComp, match: result.match, conflictFields: result.conflictFields, itemType: "completion" });
+      return;
+    }
+    saveCompletions([...completions, { ...newComp, _id: `smc-custom-${Date.now()}` }]);
     setNewPrompt(""); setNewHint("");
   };
   const deleteCompletion = (i) => saveCompletions(completions.filter((_, j) => j !== i));
   const saveEditComp = () => {
     if (!editCompPrompt.trim()) return;
-    saveCompletions(completions.map((c, i) => i !== editingComp ? c : { prompt: editCompPrompt.trim(), hint: editCompHint.trim() || c.hint }));
+    const edited = { prompt: editCompPrompt.trim(), hint: editCompHint.trim() || completions[editingComp].hint };
+    const others = completions.filter((_, i) => i !== editingComp);
+    const result = checkDuplicate(others, edited, it => it.prompt, ["hint"]);
+    if (result.action === "ignore") { showDup('edit-comp', () => { setEditCompPrompt(completions[editingComp].prompt); setEditCompHint(completions[editingComp].hint); }); return; }
+    if (result.action === "update") {
+      saveCompletions(completions.map((c, i) => i === editingComp ? c : c._id === result.match._id ? { ...result.merged, _id: c._id } : c));
+      setEditingComp(null); return;
+    }
+    if (result.action === "conflict") {
+      setSmConflict({ newItem: edited, match: result.match, conflictFields: result.conflictFields, itemType: "completion" });
+      return;
+    }
+    saveCompletions(completions.map((c, i) => i !== editingComp ? c : { ...edited, _id: c._id }));
     setEditingComp(null);
   };
 
@@ -147,20 +173,67 @@ export default function SentenceModule({ addToLog }) {
   const addConstruction = () => {
     const words = newConWords.split(",").map(w => w.trim()).filter(Boolean);
     if (words.length < 2) return;
-    saveConstructions([...constructions, { words, hint: newConHint.trim() || "Make a sentence", _id: `smx-custom-${Date.now()}` }]);
+    const newCon = { words, hint: newConHint.trim() || "Make a sentence" };
+    const result = checkDuplicate(constructions, newCon,
+      it => (it.words ?? []).map(w => w.toLowerCase()).sort().join(","),
+      ["hint"]);
+    if (result.action === "ignore") { showDup('con', () => { setNewConWords(""); setNewConHint(""); }); return; }
+    if (result.action === "update") {
+      saveConstructions(constructions.map(c => c._id === result.match._id ? { ...result.merged, _id: c._id } : c));
+      setNewConWords(""); setNewConHint(""); return;
+    }
+    if (result.action === "conflict") {
+      setSmConflict({ newItem: newCon, match: result.match, conflictFields: result.conflictFields, itemType: "construction" });
+      return;
+    }
+    saveConstructions([...constructions, { ...newCon, _id: `smx-custom-${Date.now()}` }]);
     setNewConWords(""); setNewConHint("");
   };
   const deleteConstruction = (i) => saveConstructions(constructions.filter((_, j) => j !== i));
   const saveEditCon = () => {
     const words = editConWords.split(",").map(w => w.trim()).filter(Boolean);
     if (words.length < 2) return;
-    saveConstructions(constructions.map((c, i) => i !== editingCon ? c : { words, hint: editConHint.trim() || c.hint }));
+    const edited = { words, hint: editConHint.trim() || constructions[editingCon].hint };
+    const others = constructions.filter((_, i) => i !== editingCon);
+    const result = checkDuplicate(others, edited,
+      it => (it.words ?? []).map(w => w.toLowerCase()).sort().join(","),
+      ["hint"]);
+    if (result.action === "ignore") { showDup('edit-con', () => { setEditConWords(constructions[editingCon].words.join(", ")); setEditConHint(constructions[editingCon].hint); }); return; }
+    if (result.action === "update") {
+      saveConstructions(constructions.map((c, i) => i === editingCon ? c : c._id === result.match._id ? { ...result.merged, _id: c._id } : c));
+      setEditingCon(null); return;
+    }
+    if (result.action === "conflict") {
+      setSmConflict({ newItem: edited, match: result.match, conflictFields: result.conflictFields, itemType: "construction" });
+      return;
+    }
+    saveConstructions(constructions.map((c, i) => i !== editingCon ? c : { ...edited, _id: c._id }));
     setEditingCon(null);
   };
 
   if (adminOpen) {
     return (
       <div style={{ position: "relative", height: "100%" }}>
+        {/* Conflict resolution dialog */}
+        {smConflict && (
+          <DuplicateConflictModal
+            itemLabel={smConflict.itemType === "completion" ? smConflict.match.prompt : (smConflict.match.words ?? []).join(", ")}
+            existing={smConflict.match}
+            incoming={smConflict.newItem}
+            conflictFields={smConflict.conflictFields}
+            onResolve={merged => {
+              if (smConflict.itemType === "completion") {
+                saveCompletions(completions.map(c => c._id === smConflict.match._id ? merged : c));
+                setEditingComp(null);
+              } else {
+                saveConstructions(constructions.map(c => c._id === smConflict.match._id ? merged : c));
+                setEditingCon(null);
+              }
+              setSmConflict(null);
+            }}
+            onCancel={() => setSmConflict(null)}
+          />
+        )}
         {/* Export/import dialogs */}
         {showExport && (
           <PpaExportDialog moduleId={SM_MODULE_ID} items={smAllCustom()} getLabel={smGetLabel}
@@ -214,6 +287,7 @@ export default function SentenceModule({ addToLog }) {
                     <div key={i} style={{ padding: "12px 18px", borderBottom: "1px solid #F0EDE8" }}>
                       {editingComp === i ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {dupWarning === 'edit-comp' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
                           <input value={editCompPrompt} onChange={e => setEditCompPrompt(e.target.value)} placeholder="Sentence stem..."
                             style={{ padding: "7px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 14, outline: "none" }} />
                           <input value={editCompHint} onChange={e => setEditCompHint(e.target.value)} placeholder="Topic hint..."
@@ -239,6 +313,7 @@ export default function SentenceModule({ addToLog }) {
                   ))}
                   {/* Add new */}
                   <div style={{ padding: "14px 18px", background: "#F8F6F2", display: "flex", flexDirection: "column", gap: 8 }}>
+                    {dupWarning === 'comp' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
                     <input value={newPrompt} onChange={e => setNewPrompt(e.target.value)} placeholder="New sentence stem (e.g. My favourite place is...)"
                       style={{ padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 14, outline: "none", background: "#FFFDF9" }} />
                     <div style={{ display: "flex", gap: 8 }}>
@@ -258,6 +333,7 @@ export default function SentenceModule({ addToLog }) {
                     <div key={i} style={{ padding: "12px 18px", borderBottom: "1px solid #F0EDE8" }}>
                       {editingCon === i ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {dupWarning === 'edit-con' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
                           <input value={editConWords} onChange={e => setEditConWords(e.target.value)} placeholder="Words comma-separated (e.g. dog, run, park, the)"
                             style={{ padding: "7px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 14, outline: "none" }} />
                           <input value={editConHint} onChange={e => setEditConHint(e.target.value)} placeholder="Hint..."
@@ -285,6 +361,7 @@ export default function SentenceModule({ addToLog }) {
                   ))}
                   {/* Add new */}
                   <div style={{ padding: "14px 18px", background: "#F8F6F2", display: "flex", flexDirection: "column", gap: 8 }}>
+                    {dupWarning === 'con' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
                     <input value={newConWords} onChange={e => setNewConWords(e.target.value)} placeholder="Words comma-separated (e.g. cat, sat, mat, the)"
                       style={{ padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 14, outline: "none", background: "#FFFDF9" }} />
                     <div style={{ display: "flex", gap: 8 }}>
