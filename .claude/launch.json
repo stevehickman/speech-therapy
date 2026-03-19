@@ -2,16 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "PPA Speech Therapy (main)",
+      "name": "PPA Speech Therapy",
       "runtimeExecutable": "/Users/stevehickman/.nvm/versions/node/v24.14.0/bin/node",
-      "runtimeArgs": ["/Users/stevehickman/Documents/GitHub/speech-therapy/node_modules/.bin/vite"],
-      "port": 5173
+      "runtimeArgs": ["/Users/stevehickman/Documents/GitHub/speech-therapy/node_modules/.bin/vite", "--port", "5175"],
+      "port": 5175
     },
     {
       "name": "PPA Speech Therapy PWA",
-      "runtimeExecutable": "/Users/stevehickman/.nvm/versions/node/v24.14.0/bin/npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "pwa"],
-      "port": 5174
+      "runtimeExecutable": "/Users/stevehickman/.nvm/versions/node/v24.14.0/bin/node",
+      "runtimeArgs": ["/Users/stevehickman/Documents/GitHub/speech-therapy/pwa/node_modules/.bin/vite", "--config", "pwa/vite.config.js", "--port", "5176"],
+      "port": 5176
     }
   ]
 }

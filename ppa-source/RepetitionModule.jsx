@@ -8,7 +8,7 @@ import {
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
 import { AdminPinEntry } from "./AdminPinEntry.jsx";
-import { Btn } from "./shared.jsx";
+import { Btn, isDuplicateString } from "./shared.jsx";
 
 export default function RepetitionModule({ addToLog }) {
   // ── data (seeded from REPETITION_LEVELS, persisted in localStorage) ────────
@@ -45,6 +45,8 @@ export default function RepetitionModule({ addToLog }) {
   const [showExport,   setShowExport]   = useState(false);
   const [showReexport, setShowReexport] = useState(false);
   const [importToast,  setImportToast]  = useState(null);
+  const [dupWarning, setDupWarning] = useState(null); // null | 'item' | 'level' | 'edit'
+  const showDup = (key, revert) => { setDupWarning(key); setTimeout(() => { setDupWarning(null); revert?.(); }, 300); };
 
   const openAdmin = () => { setPinPassed(false); setAdminOpen(true); };
   const rmCustomLevels = () => levels.filter(l => !l._builtin);
@@ -103,12 +105,15 @@ export default function RepetitionModule({ addToLog }) {
   };
   const addItem = (li) => {
     if (!newItem.trim()) return;
+    if (isDuplicateString(levels[li].items, newItem)) { showDup('item', () => setNewItem("")); return; }
     const next = levels.map((l, i) => i !== li ? l : { ...l, items: [...l.items, newItem.trim()] });
     saveLevels(next); setNewItem("");
   };
   const saveEdit = () => {
     if (!editText.trim() || !editingItem) return;
     const { levelIdx, itemIdx } = editingItem;
+    const others = levels[levelIdx].items.filter((_, j) => j !== itemIdx);
+    if (isDuplicateString(others, editText)) { showDup('edit', () => setEditText(levels[levelIdx].items[itemIdx])); return; }
     const next = levels.map((l, i) => i !== levelIdx ? l : {
       ...l, items: l.items.map((it, j) => j === itemIdx ? editText.trim() : it),
     });
@@ -116,6 +121,7 @@ export default function RepetitionModule({ addToLog }) {
   };
   const addLevel = () => {
     if (!newLevelName.trim()) return;
+    if (isDuplicateString(levels.map(l => l.name), newLevelName)) { showDup('level', () => setNewLevelName("")); return; }
     saveLevels([...levels, { name: newLevelName.trim(), items: [], _id: `rep-custom-${Date.now()}` }]);
     setNewLevelName(""); setAddingLevel(false);
   };
@@ -177,12 +183,15 @@ export default function RepetitionModule({ addToLog }) {
 
               {/* Add new level */}
               {addingLevel && (
-                <div style={{ display: "flex", gap: 8, background: "#F0F7F5", borderRadius: 12, padding: "12px 16px", border: "1px solid #B0D4CE" }}>
-                  <input value={newLevelName} onChange={e => setNewLevelName(e.target.value)} onKeyDown={e => e.key === "Enter" && addLevel()}
-                    placeholder="Level name (e.g. Long Sentences)" autoFocus
-                    style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #B0D4CE", fontSize: 14, outline: "none" }} />
-                  <button onClick={addLevel} style={{ padding: "8px 16px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Add</button>
-                  <button onClick={() => setAddingLevel(false)} style={{ padding: "8px 12px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 8, cursor: "pointer", color: "#666" }}>Cancel</button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, background: "#F0F7F5", borderRadius: 12, padding: "12px 16px", border: "1px solid #B0D4CE" }}>
+                  {dupWarning === 'level' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input value={newLevelName} onChange={e => setNewLevelName(e.target.value)} onKeyDown={e => e.key === "Enter" && addLevel()}
+                      placeholder="Level name (e.g. Long Sentences)" autoFocus
+                      style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #B0D4CE", fontSize: 14, outline: "none" }} />
+                    <button onClick={addLevel} style={{ padding: "8px 16px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Add</button>
+                    <button onClick={() => setAddingLevel(false)} style={{ padding: "8px 12px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 8, cursor: "pointer", color: "#666" }}>Cancel</button>
+                  </div>
                 </div>
               )}
 
@@ -201,12 +210,15 @@ export default function RepetitionModule({ addToLog }) {
                   {levels[adminLevel].items.map((item, ii) => (
                     <div key={ii} style={{ padding: "12px 18px", borderBottom: "1px solid #F0EDE8", display: "flex", alignItems: "center", gap: 10 }}>
                       {editingItem?.levelIdx === adminLevel && editingItem?.itemIdx === ii ? (
-                        <>
-                          <input value={editText} onChange={e => setEditText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditingItem(null); }}
-                            autoFocus style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 15, outline: "none" }} />
-                          <button onClick={saveEdit} style={{ padding: "5px 12px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>Save</button>
-                          <button onClick={() => setEditingItem(null)} style={{ padding: "5px 10px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#666" }}>✕</button>
-                        </>
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                          {dupWarning === 'edit' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
+                          <div style={{ display: "flex", gap: 10 }}>
+                            <input value={editText} onChange={e => setEditText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditingItem(null); }}
+                              autoFocus style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 15, outline: "none" }} />
+                            <button onClick={saveEdit} style={{ padding: "5px 12px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>Save</button>
+                            <button onClick={() => setEditingItem(null)} style={{ padding: "5px 10px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#666" }}>✕</button>
+                          </div>
+                        </div>
                       ) : (
                         <>
                           <span style={{ flex: 1, fontSize: 15, color: "#2D3B36" }}>{item}</span>
@@ -219,12 +231,15 @@ export default function RepetitionModule({ addToLog }) {
                     </div>
                   ))}
                   {/* Add item */}
-                  <div style={{ padding: "12px 18px", display: "flex", gap: 8, background: "#F8F6F2" }}>
-                    <input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => e.key === "Enter" && addItem(adminLevel)}
-                      placeholder={`Add new ${levels[adminLevel].name.toLowerCase().replace(/s$/, "")}...`}
-                      style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 14, outline: "none", background: "#FFFDF9" }} />
-                    <button onClick={() => addItem(adminLevel)}
-                      style={{ padding: "8px 18px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>Add</button>
+                  <div style={{ padding: "12px 18px", display: "flex", flexDirection: "column", gap: 6, background: "#F8F6F2" }}>
+                    {dupWarning === 'item' && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600 }}>Duplicate — ignored</div>}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => e.key === "Enter" && addItem(adminLevel)}
+                        placeholder={`Add new ${levels[adminLevel].name.toLowerCase().replace(/s$/, "")}...`}
+                        style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 14, outline: "none", background: "#FFFDF9" }} />
+                      <button onClick={() => addItem(adminLevel)}
+                        style={{ padding: "8px 18px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>Add</button>
+                    </div>
                   </div>
                 </div>
               )}
