@@ -610,9 +610,184 @@ function ItemForm({ initial, onSave, onCancel, dupWarning }) {
   );
 }
 
+// ── Bulk Import Panel ──────────────────────────────────────────────────────────
+function BulkImportPanel({ onSaveAll, onCancel }) {
+  const [drafts, setDrafts] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const processFiles = async (files) => {
+    const imageFiles = Array.from(files).filter(
+      f => !f.type || f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name)
+    );
+    const results = await Promise.all(imageFiles.map(async (file) => {
+      try {
+        const dataUrl = await compressImageFile(file, 240, 0.75);
+        const rawName = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").toLowerCase().trim();
+        const isGenerated = /^(img|dsc|photo|picture|p|image|pic)[-_\s]?\d+$/i.test(rawName);
+        return { graphic: dataUrl, word: isGenerated ? "" : rawName, category: "", clue_semantic: "", clue_phonemic: "", generating: false, id: `bulk-${Date.now()}-${Math.random()}` };
+      } catch (_) { return null; }
+    }));
+    setDrafts(prev => [...prev, ...results.filter(Boolean)]);
+  };
+
+  const handleFileChange = (e) => { processFiles(e.target.files); e.target.value = ""; };
+  const handleDrop = (e) => { e.preventDefault(); setDragOver(false); processFiles(e.dataTransfer.files); };
+
+  const updateDraft = (id, key, value) =>
+    setDrafts(prev => prev.map(d => d.id === id ? { ...d, [key]: value } : d));
+
+  const generateForDraft = async (id, word) => {
+    if (!word.trim()) return;
+    setDrafts(prev => prev.map(d => d.id === id ? { ...d, generating: true } : d));
+    try {
+      const data = await fetchAnthropicApi({
+        model: CLAUDE_MODEL, max_tokens: 256,
+        messages: [{ role: "user", content: `For the word "${word.trim()}", provide speech therapy practice defaults as JSON with these fields:\n- category: a simple one or two word category (e.g. "food", "animal", "body part")\n- clue_semantic: a short semantic cue sentence (e.g. "It's a fruit you eat")\n- clue_phonemic: a phonemic cue (e.g. "Starts with 'A'...")\nRespond with ONLY valid JSON, no markdown.` }],
+      });
+      const text = data.content?.map(b => b.text || "").join("").trim();
+      if (text) {
+        const s = JSON.parse(text);
+        setDrafts(prev => prev.map(d => d.id !== id ? d : {
+          ...d,
+          category:      d.category      === "" ? (s.category      || d.category)      : d.category,
+          clue_semantic: d.clue_semantic === "" ? (s.clue_semantic || d.clue_semantic) : d.clue_semantic,
+          clue_phonemic: d.clue_phonemic === "" ? (s.clue_phonemic || d.clue_phonemic) : d.clue_phonemic,
+          generating: false,
+        }));
+        return;
+      }
+    } catch (_) { /* silent */ }
+    setDrafts(prev => prev.map(d => d.id === id ? { ...d, generating: false } : d));
+  };
+
+  const generateAll = async () => {
+    for (const draft of [...drafts]) {
+      if (draft.word.trim()) await generateForDraft(draft.id, draft.word);
+    }
+  };
+
+  const removeDraft = (id) => setDrafts(prev => prev.filter(d => d.id !== id));
+
+  const readyCount = drafts.filter(d => d.word.trim() && d.category.trim() && d.clue_semantic.trim() && d.clue_phonemic.trim()).length;
+
+  const handleSaveAll = () => {
+    const valid = drafts.filter(d => d.word.trim() && d.category.trim() && d.clue_semantic.trim() && d.clue_phonemic.trim());
+    if (valid.length > 0) onSaveAll(valid);
+  };
+
+  const cellInput = { width: "100%", padding: "6px 8px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none", background: "#FFFDF9", color: "#2D3B36", boxSizing: "border-box" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <h3 style={{ margin: 0, color: "#2D3B36" }}>Bulk Import Photos</h3>
+
+      {/* Drop zone */}
+      <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif" multiple style={{ display: "none" }} onChange={handleFileChange} />
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        style={{ padding: "20px 16px", borderRadius: 14, cursor: "pointer",
+          border: `2px dashed ${dragOver ? "#5A2A80" : "#9B7FB8"}`,
+          background: dragOver ? "#EEE8FF" : "#F8F5FF",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 6, transition: "all 0.15s" }}>
+        <div style={{ fontSize: 28 }}>📁</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#5A2A80" }}>Drop photos here, or click to browse</div>
+        <div style={{ fontSize: 12, color: "#888" }}>Select multiple images · JPEG, PNG, WebP, HEIC</div>
+      </div>
+
+      {drafts.length > 0 && (
+        <>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={generateAll}
+              style={{ padding: "9px 16px", borderRadius: 10, border: "2px solid #9B7FB8",
+                background: "#9B7FB820", color: "#5A2A80", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
+              ✨ Generate AI defaults for all
+            </button>
+            <span style={{ fontSize: 13, color: "#888" }}>{drafts.length} photo{drafts.length !== 1 ? "s" : ""} — {readyCount} ready to save</span>
+          </div>
+
+          {/* Grid table */}
+          <div style={{ overflowX: "auto", borderRadius: 12, border: "2px solid #E8E0D0" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "#F5F0E8", borderBottom: "2px solid #E8E0D0" }}>
+                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700, width: 72 }}>Photo</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700, width: "14%" }}>Word *</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700, width: "13%" }}>Category *</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700 }}>💡 Semantic cue *</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700 }}>🔤 Phonemic cue *</th>
+                  <th style={{ padding: "10px 12px", width: 36 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {drafts.map((draft) => {
+                  const missing = draft.word.trim() && (!draft.category.trim() || !draft.clue_semantic.trim() || !draft.clue_phonemic.trim());
+                  return (
+                    <tr key={draft.id} style={{ borderBottom: "1px solid #F0EBE0", background: missing ? "#FFF8F8" : "transparent" }}>
+                      <td style={{ padding: "8px 12px" }}>
+                        <img src={draft.graphic} alt="" style={{ width: 52, height: 52, objectFit: "contain", borderRadius: 8, border: "2px solid #D5CFC4", display: "block" }} />
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <input value={draft.word} onChange={e => updateDraft(draft.id, "word", e.target.value)}
+                            onBlur={e => generateForDraft(draft.id, e.target.value)}
+                            placeholder="e.g. apple" style={{ ...cellInput, borderColor: !draft.word.trim() ? "#F0C0C0" : "#D5CFC4" }} />
+                          {draft.generating && <ThinkingDots />}
+                        </div>
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <input value={draft.category} onChange={e => updateDraft(draft.id, "category", e.target.value)}
+                          placeholder="e.g. food" style={cellInput} />
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <input value={draft.clue_semantic} onChange={e => updateDraft(draft.id, "clue_semantic", e.target.value)}
+                          placeholder="e.g. It's a fruit you eat" style={cellInput} />
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <input value={draft.clue_phonemic} onChange={e => updateDraft(draft.id, "clue_phonemic", e.target.value)}
+                          placeholder="e.g. Starts with 'A'..." style={cellInput} />
+                      </td>
+                      <td style={{ padding: "8px 10px" }}>
+                        <button onClick={() => removeDraft(draft.id)}
+                          style={{ padding: "6px 8px", borderRadius: 8, border: "2px solid #F0C0C0",
+                            background: "#FFF5F5", color: "#C07070", cursor: "pointer", fontSize: 13 }}>
+                          🗑
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "flex", gap: 10 }}>
+        {drafts.length > 0 && (
+          <button onClick={handleSaveAll} disabled={readyCount === 0}
+            style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "none",
+              background: readyCount > 0 ? "linear-gradient(135deg, #4E8B80, #3A7A6F)" : "#ccc",
+              color: "#fff", fontWeight: 700, cursor: readyCount > 0 ? "pointer" : "default", fontSize: 15 }}>
+            Save {readyCount} item{readyCount !== 1 ? "s" : ""}
+          </button>
+        )}
+        <button onClick={onCancel}
+          style={{ padding: "12px 18px", borderRadius: 12, border: "2px solid #D5CFC4",
+            background: "#FFFDF9", color: "#666", fontWeight: 600, cursor: "pointer", fontSize: 15 }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Admin panel ────────────────────────────────────────────────────────────────
 function AdminPanel({ items, onUpdate, onClose }) {
-  const [mode, setMode]         = useState("list");   // list | add | edit
+  const [mode, setMode]         = useState("list");   // list | add | edit | bulkimport
   const [editTarget, setEditTarget] = useState(null); // item being edited
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [inlineCatEdit, setInlineCatEdit] = useState(null); // { id, value }
@@ -666,6 +841,22 @@ function AdminPanel({ items, onUpdate, onClose }) {
   const handleDelete = (id) => {
     onUpdate(items.filter(it => it.id !== id));
     setConfirmDelete(null);
+  };
+
+  const handleBulkSave = (validDrafts) => {
+    const newItems = validDrafts.map(d => ({
+      word: d.word.trim(),
+      category: d.category.trim().toLowerCase(),
+      graphic: d.graphic,
+      clue_semantic: d.clue_semantic.trim(),
+      clue_phonemic: d.clue_phonemic.trim(),
+      id: `custom-${Date.now()}-${Math.random()}`,
+    }));
+    // Deduplicate against existing: skip if word already present
+    const existingWords = new Set(items.map(it => it.word?.toLowerCase()));
+    const toAdd = newItems.filter(it => !existingWords.has(it.word.toLowerCase()));
+    onUpdate([...items, ...toAdd]);
+    setMode("list");
   };
 
   const handleReset = () => {
@@ -794,11 +985,16 @@ function AdminPanel({ items, onUpdate, onClose }) {
         {/* List view */}
         {mode === "list" && (
           <>
-            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
               <button onClick={() => setMode("add")}
-                style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "none",
+                style={{ flex: "1 1 auto", padding: "11px 0", borderRadius: 12, border: "none",
                   background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
                 + Add new item
+              </button>
+              <button onClick={() => setMode("bulkimport")}
+                style={{ flex: "1 1 auto", padding: "11px 0", borderRadius: 12, border: "2px solid #9B7FB8",
+                  background: "#F8F5FF", color: "#5A2A80", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
+                📁 Bulk import photos
               </button>
               <button onClick={handleReset}
                 style={{ padding: "11px 16px", borderRadius: 12, border: "2px solid #C07070",
@@ -906,6 +1102,11 @@ function AdminPanel({ items, onUpdate, onClose }) {
               dupWarning={dupWarning}
             />
           </>
+        )}
+
+        {/* Bulk import view */}
+        {mode === "bulkimport" && (
+          <BulkImportPanel onSaveAll={handleBulkSave} onCancel={() => setMode("list")} />
         )}
       </div>
     </div>
