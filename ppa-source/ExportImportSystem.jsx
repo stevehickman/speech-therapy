@@ -444,7 +444,7 @@ export function ppaHandleReexport(moduleId, dirtyItems, allCustomItems, selectio
 //   onSuccess      fn(results: [{filename, message}])
 //   onError        fn(filename, errorMessage)
 
-async function ppaHandleImport(moduleId, files, expectedId, processData, onSuccess, onError) {
+export async function ppaHandleImport(moduleId, files, expectedId, processData, onSuccess, onError) {
   const results = [];
   for (const file of files) {
     const filename = file.name.replace(/\.ppa$/i, "");
