@@ -481,16 +481,20 @@ function SentenceModule({ addToLog }) {
   // Completion admin
   const [newPrompt, setNewPrompt] = useState("");
   const [newHint, setNewHint] = useState("");
+  const [newCompCat, setNewCompCat] = useState("");
   const [editingComp, setEditingComp] = useState(null);
   const [editCompPrompt, setEditCompPrompt] = useState("");
   const [editCompHint, setEditCompHint] = useState("");
+  const [editCompCat, setEditCompCat] = useState("");
 
   // Construction admin
   const [newConWords, setNewConWords] = useState("");
   const [newConHint, setNewConHint] = useState("");
+  const [newConCat, setNewConCat] = useState("");
   const [editingCon, setEditingCon] = useState(null);
   const [editConWords, setEditConWords] = useState("");
   const [editConHint, setEditConHint] = useState("");
+  const [editConCat, setEditConCat] = useState("");
 
   const [showExport,   setShowExport]   = useState(false);
   const [showReexport, setShowReexport] = useState(false);
@@ -567,13 +571,13 @@ function SentenceModule({ addToLog }) {
   // ── admin helpers — completions ─────────────────────────────────────────────
   const addCompletion = () => {
     if (!newPrompt.trim()) return;
-    saveCompletions([...completions, { prompt: newPrompt.trim(), hint: newHint.trim() || "open", _id: `smc-custom-${Date.now()}` }]);
-    setNewPrompt(""); setNewHint("");
+    saveCompletions([...completions, { prompt: newPrompt.trim(), hint: newHint.trim() || "open", category: newCompCat.trim(), _id: `smc-custom-${Date.now()}` }]);
+    setNewPrompt(""); setNewHint(""); setNewCompCat("");
   };
   const deleteCompletion = (i) => saveCompletions(completions.filter((_, j) => j !== i));
   const saveEditComp = () => {
     if (!editCompPrompt.trim()) return;
-    saveCompletions(completions.map((c, i) => i !== editingComp ? c : { prompt: editCompPrompt.trim(), hint: editCompHint.trim() || c.hint }));
+    saveCompletions(completions.map((c, i) => i !== editingComp ? c : { ...c, prompt: editCompPrompt.trim(), hint: editCompHint.trim() || c.hint, category: editCompCat.trim() }));
     setEditingComp(null);
   };
 
@@ -581,14 +585,14 @@ function SentenceModule({ addToLog }) {
   const addConstruction = () => {
     const words = newConWords.split(",").map(w => w.trim()).filter(Boolean);
     if (words.length < 2) return;
-    saveConstructions([...constructions, { words, hint: newConHint.trim() || "Make a sentence", _id: `smx-custom-${Date.now()}` }]);
-    setNewConWords(""); setNewConHint("");
+    saveConstructions([...constructions, { words, hint: newConHint.trim() || "Make a sentence", category: newConCat.trim(), _id: `smx-custom-${Date.now()}` }]);
+    setNewConWords(""); setNewConHint(""); setNewConCat("");
   };
   const deleteConstruction = (i) => saveConstructions(constructions.filter((_, j) => j !== i));
   const saveEditCon = () => {
     const words = editConWords.split(",").map(w => w.trim()).filter(Boolean);
     if (words.length < 2) return;
-    saveConstructions(constructions.map((c, i) => i !== editingCon ? c : { words, hint: editConHint.trim() || c.hint }));
+    saveConstructions(constructions.map((c, i) => i !== editingCon ? c : { ...c, words, hint: editConHint.trim() || c.hint, category: editConCat.trim() }));
     setEditingCon(null);
   };
 
@@ -652,6 +656,8 @@ function SentenceModule({ addToLog }) {
                             style={{ padding: "7px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 14, outline: "none" }} />
                           <input value={editCompHint} onChange={e => setEditCompHint(e.target.value)} placeholder="Topic hint..."
                             style={{ padding: "7px 10px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none" }} />
+                          <input value={editCompCat} onChange={e => setEditCompCat(e.target.value)} placeholder="Category (e.g. emotions, daily life)"
+                            style={{ padding: "7px 10px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none" }} />
                           <div style={{ display: "flex", gap: 8 }}>
                             <button onClick={saveEditComp} style={{ padding: "5px 14px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Save</button>
                             <button onClick={() => setEditingComp(null)} style={{ padding: "5px 10px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 8, cursor: "pointer", color: "#666" }}>Cancel</button>
@@ -661,9 +667,12 @@ function SentenceModule({ addToLog }) {
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 15, color: "#2D3B36", fontWeight: 500 }}>{c.prompt}</div>
-                            <div style={{ fontSize: 12, color: "#9B7FB8", marginTop: 2 }}>Topic: {c.hint}</div>
+                            <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 12, color: "#9B7FB8" }}>Topic: {c.hint}</span>
+                              {c.category && <span style={{ fontSize: 12, background: "#EDE8F5", color: "#7B5EA7", borderRadius: 8, padding: "1px 8px", fontWeight: 600 }}>{c.category}</span>}
+                            </div>
                           </div>
-                          <button onClick={() => { setEditingComp(i); setEditCompPrompt(c.prompt); setEditCompHint(c.hint); }}
+                          <button onClick={() => { setEditingComp(i); setEditCompPrompt(c.prompt); setEditCompHint(c.hint); setEditCompCat(c.category ?? ""); }}
                             style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #D5CFC4", background: "#FFFDF9", cursor: "pointer", fontSize: 13, color: "#666" }}>✏ Edit</button>
                           <button onClick={() => deleteCompletion(i)}
                             style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #E0A0A0", background: "#FFF5F5", cursor: "pointer", fontSize: 13, color: "#C07070" }}>✕</button>
@@ -676,7 +685,9 @@ function SentenceModule({ addToLog }) {
                     <input value={newPrompt} onChange={e => setNewPrompt(e.target.value)} placeholder="New sentence stem (e.g. My favourite place is...)"
                       style={{ padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 14, outline: "none", background: "#FFFDF9" }} />
                     <div style={{ display: "flex", gap: 8 }}>
-                      <input value={newHint} onChange={e => setNewHint(e.target.value)} onKeyDown={e => e.key === "Enter" && addCompletion()} placeholder="Topic hint (optional)"
+                      <input value={newHint} onChange={e => setNewHint(e.target.value)} placeholder="Topic hint (optional)"
+                        style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none", background: "#FFFDF9" }} />
+                      <input value={newCompCat} onChange={e => setNewCompCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCompletion()} placeholder="Category (optional)"
                         style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none", background: "#FFFDF9" }} />
                       <button onClick={addCompletion}
                         style={{ padding: "8px 18px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Add</button>
@@ -696,6 +707,8 @@ function SentenceModule({ addToLog }) {
                             style={{ padding: "7px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 14, outline: "none" }} />
                           <input value={editConHint} onChange={e => setEditConHint(e.target.value)} placeholder="Hint..."
                             style={{ padding: "7px 10px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none" }} />
+                          <input value={editConCat} onChange={e => setEditConCat(e.target.value)} placeholder="Category (e.g. animals, food, family)"
+                            style={{ padding: "7px 10px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none" }} />
                           <div style={{ display: "flex", gap: 8 }}>
                             <button onClick={saveEditCon} style={{ padding: "5px 14px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Save</button>
                             <button onClick={() => setEditingCon(null)} style={{ padding: "5px 10px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 8, cursor: "pointer", color: "#666" }}>Cancel</button>
@@ -707,9 +720,12 @@ function SentenceModule({ addToLog }) {
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 3 }}>
                               {c.words.map((w, j) => <span key={j} style={{ padding: "3px 10px", background: "#E8F4F2", borderRadius: 12, fontSize: 13, color: "#4E8B80", fontWeight: 600, border: "1px solid #B0D4CE" }}>{w}</span>)}
                             </div>
-                            <div style={{ fontSize: 12, color: "#9B7FB8" }}>{c.hint}</div>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 12, color: "#9B7FB8" }}>{c.hint}</span>
+                              {c.category && <span style={{ fontSize: 12, background: "#EDE8F5", color: "#7B5EA7", borderRadius: 8, padding: "1px 8px", fontWeight: 600 }}>{c.category}</span>}
+                            </div>
                           </div>
-                          <button onClick={() => { setEditingCon(i); setEditConWords(c.words.join(", ")); setEditConHint(c.hint); }}
+                          <button onClick={() => { setEditingCon(i); setEditConWords(c.words.join(", ")); setEditConHint(c.hint); setEditConCat(c.category ?? ""); }}
                             style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #D5CFC4", background: "#FFFDF9", cursor: "pointer", fontSize: 13, color: "#666" }}>✏ Edit</button>
                           <button onClick={() => deleteConstruction(i)}
                             style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #E0A0A0", background: "#FFF5F5", cursor: "pointer", fontSize: 13, color: "#C07070" }}>✕</button>
@@ -722,7 +738,9 @@ function SentenceModule({ addToLog }) {
                     <input value={newConWords} onChange={e => setNewConWords(e.target.value)} placeholder="Words comma-separated (e.g. cat, sat, mat, the)"
                       style={{ padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 14, outline: "none", background: "#FFFDF9" }} />
                     <div style={{ display: "flex", gap: 8 }}>
-                      <input value={newConHint} onChange={e => setNewConHint(e.target.value)} onKeyDown={e => e.key === "Enter" && addConstruction()} placeholder="Hint (e.g. Make a sentence about the cat)"
+                      <input value={newConHint} onChange={e => setNewConHint(e.target.value)} placeholder="Hint (e.g. Make a sentence about the cat)"
+                        style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none", background: "#FFFDF9" }} />
+                      <input value={newConCat} onChange={e => setNewConCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addConstruction()} placeholder="Category (optional)"
                         style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "2px solid #D5CFC4", fontSize: 13, outline: "none", background: "#FFFDF9" }} />
                       <button onClick={addConstruction}
                         style={{ padding: "8px 18px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Add</button>
@@ -850,6 +868,7 @@ function ScriptsModule() {
   const [editPhraseText, setEditPhraseText] = useState("");
   const [editingSitName, setEditingSitName] = useState(null); // sitIdx
   const [editSitNameText, setEditSitNameText] = useState("");
+  const [movingPhrase, setMovingPhrase] = useState(null); // { sitIdx, phraseIdx }
 
   const [showExport,   setShowExport]   = useState(false);
   const [showReexport, setShowReexport] = useState(false);
@@ -973,6 +992,18 @@ function ScriptsModule() {
     const next = scripts.map((s, i) => i !== sitIdx ? s : { ...s, phrases: s.phrases.map((p, j) => j === phraseIdx ? editPhraseText.trim() : p) });
     saveScripts(next); setEditingPhrase(null); setEditPhraseText("");
   };
+  const movePhrase = (toSitIdx) => {
+    if (!movingPhrase) return;
+    const { sitIdx, phraseIdx } = movingPhrase;
+    const phrase = scripts[sitIdx].phrases[phraseIdx];
+    const next = scripts.map((s, i) => {
+      if (i === sitIdx) return { ...s, phrases: s.phrases.filter((_, j) => j !== phraseIdx) };
+      if (i === toSitIdx) return { ...s, phrases: [...s.phrases, phrase] };
+      return s;
+    });
+    saveScripts(next);
+    setMovingPhrase(null);
+  };
   const addSituation = () => {
     if (!newSitName.trim()) return;
     saveScripts([...scripts, { situation: newSitName.trim(), phrases: [], _id: `sc-custom-${Date.now()}` }]);
@@ -1082,23 +1113,43 @@ function ScriptsModule() {
                   )}
 
                   {scripts[adminSit].phrases.map((phrase, pi) => (
-                    <div key={pi} style={{ padding: "12px 18px", borderBottom: "1px solid #F0EDE8", display: "flex", alignItems: "center", gap: 10 }}>
+                    <div key={pi} style={{ padding: "12px 18px", borderBottom: "1px solid #F0EDE8" }}>
                       {editingPhrase?.sitIdx === adminSit && editingPhrase?.phraseIdx === pi ? (
-                        <>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <input value={editPhraseText} onChange={e => setEditPhraseText(e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") saveEditPhrase(); if (e.key === "Escape") setEditingPhrase(null); }}
                             autoFocus style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "2px solid #4E8B80", fontSize: 15, outline: "none" }} />
                           <button onClick={saveEditPhrase} style={{ padding: "5px 12px", background: "#4E8B80", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700 }}>Save</button>
                           <button onClick={() => setEditingPhrase(null)} style={{ padding: "5px 10px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#666" }}>✕</button>
-                        </>
+                        </div>
+                      ) : movingPhrase?.sitIdx === adminSit && movingPhrase?.phraseIdx === pi ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ fontSize: 14, color: "#555" }}>Move "<em>{phrase}</em>" to:</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {scripts.map((s, si) => si !== adminSit && (
+                              <button key={si} onClick={() => movePhrase(si)}
+                                style={{ padding: "5px 12px", borderRadius: 20, border: "2px solid #4E8B80", background: "#E8F4F2", color: "#3A7A6F", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+                                {s.situation}
+                              </button>
+                            ))}
+                            <button onClick={() => setMovingPhrase(null)}
+                              style={{ padding: "5px 12px", borderRadius: 20, border: "2px solid #D5CFC4", background: "#F5F0E8", color: "#666", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       ) : (
-                        <>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <span style={{ flex: 1, fontSize: 15, color: "#2D3B36" }}>"{phrase}"</span>
                           <button onClick={() => { setEditingPhrase({ sitIdx: adminSit, phraseIdx: pi }); setEditPhraseText(phrase); }}
                             style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #D5CFC4", background: "#FFFDF9", cursor: "pointer", fontSize: 13, color: "#666" }}>✏ Edit</button>
+                          {scripts.length > 1 && (
+                            <button onClick={() => setMovingPhrase({ sitIdx: adminSit, phraseIdx: pi })}
+                              style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #B0D4CE", background: "#F0F7F5", cursor: "pointer", fontSize: 13, color: "#4E8B80" }}>Move →</button>
+                          )}
                           <button onClick={() => deletePhrase(adminSit, pi)}
                             style={{ padding: "4px 10px", borderRadius: 8, border: "1px solid #E0A0A0", background: "#FFF5F5", cursor: "pointer", fontSize: 13, color: "#C07070" }}>✕</button>
-                        </>
+                        </div>
                       )}
                     </div>
                   ))}

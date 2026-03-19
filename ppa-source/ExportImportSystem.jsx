@@ -5,6 +5,8 @@
 // Snapshot tracking: localStorage ppa_export_snapshots  → {filename: {itemId: contentHash}}
 // Known files:       localStorage ppa_known_files        → {moduleId: [filename, ...]}
 
+import { useState, useRef } from "react";
+
 export const PPA_EXT          = ".ppa";
 export const PPA_SNAPSHOTS_KEY = "ppa_export_snapshots";
 export const PPA_FILES_KEY    = "ppa_known_files";
