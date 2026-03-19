@@ -51,6 +51,21 @@ export function CallAPI({ messages, onResult, onError, system = SYSTEM_PROMPT })
   return null;
 }
 
+// ── Btn ────────────────────────────────────────────────────────────────────────
+// Simple coloured button used across several modules.
+export function Btn({ color, onClick, children }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: "11px 20px", borderRadius: 12, border: "none", cursor: "pointer",
+      background: color, color: "#fff", fontSize: 15, fontWeight: 600, transition: "opacity 0.15s",
+    }}
+      onMouseOver={e => e.target.style.opacity = 0.85}
+      onMouseOut={e => e.target.style.opacity = 1}>
+      {children}
+    </button>
+  );
+}
+
 // ── ThinkingDots ───────────────────────────────────────────────────────────────
 // Animated three-dot loading indicator.
 export function ThinkingDots() {
