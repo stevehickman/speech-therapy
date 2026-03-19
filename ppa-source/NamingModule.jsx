@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { NAMING_ITEMS } from "./data/namingItems.js";
 import { CLAUDE_MODEL, SYSTEM_PROMPT } from "./data/config.js";
-import { CallAPI, ThinkingDots, checkDuplicate, DuplicateConflictModal } from "./shared.jsx";
+import { CallAPI, ThinkingDots, fetchAnthropicApi, checkDuplicate, DuplicateConflictModal } from "./shared.jsx";
 import {
   PPA_EXT,
   ppaGetSnapshots, ppaFilesForModule, ppaAddKnownFile,
@@ -486,8 +486,39 @@ function ItemForm({ initial, onSave, onCancel, dupWarning }) {
   const [form, setForm] = useState(initial ?? blank);
   const [showPicker, setShowPicker] = useState(false);
   const [error, setError]   = useState("");
+  const [generating, setGenerating] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const generateDefaults = async (word) => {
+    if (!word.trim()) return;
+    setGenerating(true);
+    try {
+      const data = await fetchAnthropicApi({
+        model: CLAUDE_MODEL,
+        max_tokens: 256,
+        messages: [{
+          role: "user",
+          content: `For the word "${word.trim()}", provide speech therapy practice defaults as JSON with these fields:\n- graphic: a single emoji that best represents the word\n- category: a simple one or two word category (e.g. "food", "animal", "body part")\n- clue_semantic: a short semantic cue sentence (e.g. "It's a fruit you eat")\n- clue_phonemic: a phonemic cue (e.g. "Starts with 'A'...")\nRespond with ONLY valid JSON, no markdown.`,
+        }],
+      });
+      const text = data.content?.map(b => b.text || "").join("").trim();
+      if (text) {
+        const s = JSON.parse(text);
+        setForm(f => ({
+          ...f,
+          graphic:       f.graphic       === "🖼️" ? (s.graphic       || f.graphic)       : f.graphic,
+          category:      f.category      === ""    ? (s.category      || f.category)      : f.category,
+          clue_semantic: f.clue_semantic === ""    ? (s.clue_semantic || f.clue_semantic) : f.clue_semantic,
+          clue_phonemic: f.clue_phonemic === ""    ? (s.clue_phonemic || f.clue_phonemic) : f.clue_phonemic,
+        }));
+      }
+    } catch (e) {
+      // Silently fail — user can fill in manually
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const submit = () => {
     if (!form.word.trim())         { setError("Word is required"); return; }
@@ -530,8 +561,16 @@ function ItemForm({ initial, onSave, onCancel, dupWarning }) {
       <div>
         {dupWarning && <div style={{ fontSize: 12, color: "#C07070", fontWeight: 600, marginBottom: 4 }}>Duplicate — ignored</div>}
         <label style={labelStyle}>Word *</label>
-        <input value={form.word} onChange={e => set("word", e.target.value)} placeholder="e.g. apple" style={fieldStyle} />
+        <input value={form.word} onChange={e => set("word", e.target.value)}
+          onBlur={e => generateDefaults(e.target.value)}
+          placeholder="e.g. apple" style={fieldStyle} />
       </div>
+
+      {generating && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#666", fontSize: 13 }}>
+          <ThinkingDots /> Generating defaults…
+        </div>
+      )}
 
       {/* Category */}
       <div>
