@@ -235,11 +235,13 @@ export function dictSyncFromNamingItems(items) {
       const categories  = incomingCat && !prevCats.includes(incomingCat)
         ? [...prevCats, incomingCat]
         : prevCats;
+      const partOfSpeech = [...new Set([...( prev.partOfSpeech ?? []), "Nouns"])];
       dict[k] = {
         ...prev,
         word:          it.word,
         graphic:       it.graphic ?? it.emoji ?? prev.graphic ?? "",
         categories,
+        partOfSpeech,
         clue_semantic: it.clue_semantic ?? prev.clue_semantic ?? "",
         clue_phonemic: it.clue_phonemic ?? prev.clue_phonemic ?? "",
       };

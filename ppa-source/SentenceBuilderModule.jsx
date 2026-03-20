@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  SB_NOUNS, SB_VERBS, SB_ADJECTIVES,
+  SB_VERBS, SB_ADJECTIVES,
   SB_ADVERBS, SB_PRONOUNS, SB_PREPS, SB_ARTICLES,
 } from "./data/sbWordBank.js";
 import { conjugateVerb } from "./data/sbConjugation.js";
@@ -11,13 +11,17 @@ import {
   ppaDownload, ppaHandleReexport,
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
-import { useDictionaryLookup, isImageGraphic, dictGetEntry, dictAddWord } from "./data/dictionary.js";
+import { useDictionaryLookup, isImageGraphic, dictGetEntry, dictAddWord, dictLoad } from "./data/dictionary.js";
 import { CLAUDE_MODEL } from "./data/config.js";
 import { fetchAnthropicApi, checkDuplicate, DuplicateConflictModal } from "./shared.jsx";
 
 // ---- SENTENCE BUILDER ----
 function SentenceBuilderModule({ addToLog }) {
   const graphicLookup = useDictionaryLookup();
+  const [dict] = useState(() => dictLoad());
+  // All dictionary entries that are nouns with at least one category — used as the noun word bank
+  const dictNounItems = Object.values(dict).filter(e => e.partOfSpeech?.includes("Nouns") && e.categories?.length > 0);
+  const dictNounCategories = [...new Set(dictNounItems.flatMap(e => e.categories))].sort();
   const [words, setWords] = useState([]); // [{text, emoji, id}]
   const [typedText,  setTypedText]  = useState("");
   const inputRef    = useRef(null);
@@ -200,25 +204,24 @@ function SentenceBuilderModule({ addToLog }) {
   };
 
   const renderNounSection = () => {
-    const catNames = Object.keys(SB_NOUNS);
-    const catIcons = { People: "👥", Animals: "🐾", "Food & Drink": "🍽️", Places: "📍", Things: "📦", Nature: "🌿" };
+    const catIcons = { People: "👥", Animals: "🐾", "Food & Drink": "🍽️", Places: "📍", Things: "📦", Nature: "🌿", food: "🍽️", animal: "🐾", furniture: "🪑", object: "📦", nature: "🌿", clothing: "👕", body: "🫀", transport: "🚗", sports: "⚽" };
     const showItems = nounCat === "All Nouns"
-      ? Object.values(SB_NOUNS).flat()
-      : (SB_NOUNS[nounCat] || []);
+      ? dictNounItems
+      : dictNounItems.filter(e => e.categories.includes(nounCat));
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button onClick={() => setNounCat("All Nouns")} style={{ padding: "7px 14px", borderRadius: 20, border: `2px solid ${nounCat === "All Nouns" ? col.active : col.border}`, background: nounCat === "All Nouns" ? col.active + "22" : col.bg, color: nounCat === "All Nouns" ? col.text : "#666", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
             🧱 All Nouns
           </button>
-          {catNames.map(c => (
+          {dictNounCategories.map(c => (
             <button key={c} onClick={() => setNounCat(c)} style={{ padding: "7px 14px", borderRadius: 20, border: `2px solid ${nounCat === c ? col.active : col.border}`, background: nounCat === c ? col.active + "22" : col.bg, color: nounCat === c ? col.text : "#666", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>
               {catIcons[c] || "🔷"} {c}
             </button>
           ))}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {showItems.map((item, i) => renderWordTile(item.word, item.emoji, i))}
+          {showItems.map((item, i) => renderWordTile(item.word, item.graphic, i))}
         </div>
       </div>
     );
