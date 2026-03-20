@@ -2242,7 +2242,7 @@ function BulkImportPanel({ onSaveAll, onCancel }) {
 
 // ── Admin panel ────────────────────────────────────────────────────────────────
 function AdminPanel({ items, onUpdate, onClose }) {
-  const [mode, setMode]         = useState("list");   // list | add | edit | bulkimport
+  const [mode, setMode]         = useState("list");   // list | add | edit | bulkimport | generate
   const [editTarget, setEditTarget] = useState(null); // item being edited
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [inlineCatEdit, setInlineCatEdit] = useState(null); // { id, value }
@@ -2253,6 +2253,13 @@ function AdminPanel({ items, onUpdate, onClose }) {
   const [dupWarning, setDupWarning] = useState(false);
   const [formResetKey, setFormResetKey] = useState(0);
   const showDup = () => { setDupWarning(true); setTimeout(() => { setDupWarning(false); setFormResetKey(k => k + 1); }, 300); };
+
+  // ── Generate-by-category state ──────────────────────────────────────────────
+  const [genCategory, setGenCategory] = useState("");
+  const [genCount,    setGenCount]    = useState(15);
+  const [genLoading,  setGenLoading]  = useState(false);
+  const [genResults,  setGenResults]  = useState(null); // null = not yet generated
+  const [genSelected, setGenSelected] = useState(new Set());
 
   const MODULE_ID    = "naming";
   const isBuiltin    = item => item.id?.startsWith("seed-");
@@ -2384,6 +2391,57 @@ function AdminPanel({ items, onUpdate, onClose }) {
     setInlineCatEdit(null);
   };
 
+  // ── Generate by category ────────────────────────────────────────────────────
+  const generateCategory = async () => {
+    if (!genCategory.trim()) return;
+    setGenLoading(true);
+    setGenResults(null);
+    try {
+      const data = await fetchAnthropicApi({
+        model: CLAUDE_MODEL,
+        max_tokens: 4096,
+        messages: [{
+          role: "user",
+          content: `Generate the ${genCount} most common nouns in the "${genCategory.trim()}" category for speech therapy practice with Primary Progressive Aphasia patients.\n\nFor each noun provide:\n- word: the noun (lowercase)\n- graphic: a single emoji that best represents it\n- clue_semantic: a short semantic cue sentence (e.g. "It's a fruit you eat")\n- clue_phonemic: a phonemic cue noting the starting letter (e.g. "Starts with 'A'...")\n\nRespond with ONLY a valid JSON array — no markdown, no explanation. Format:\n[{"word":"apple","graphic":"🍎","clue_semantic":"It's a fruit you eat","clue_phonemic":"Starts with 'A'..."}]`,
+        }],
+      });
+      const raw = data.content?.map(b => b.text || "").join("").trim();
+      const jsonMatch = raw.match(/\[[\s\S]*\]/);
+      const generated = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+      if (!Array.isArray(generated)) throw new Error("Unexpected response");
+
+      const NAMING_FIELDS = ["graphic", "category", "clue_semantic", "clue_phonemic"];
+      const catLower = genCategory.trim().toLowerCase();
+      const classified = generated.map(gen => {
+        const candidate = { ...gen, category: catLower };
+        const dup = checkDuplicate(items, candidate, it => it.word, NAMING_FIELDS);
+        if (dup.action === "add") return { ...candidate, _status: "new" };
+        return { ...dup.match, _status: "duplicate" };
+      });
+
+      setGenResults(classified);
+      setGenSelected(new Set(
+        classified.map((r, i) => r._status === "new" ? i : null).filter(i => i !== null)
+      ));
+    } catch {
+      alert("Generation failed — check your API key and try again.");
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
+  const handleAddGenerated = () => {
+    const stamp = Date.now();
+    const toAdd = (genResults ?? [])
+      .filter((_, i) => genSelected.has(i))
+      .map(({ _status, ...rest }, i) => ({ ...rest, id: `custom-${stamp + i}` }));
+    onUpdate([...items, ...toAdd]);
+    setMode("list");
+    setGenResults(null);
+    setGenCategory("");
+    setGenCount(15);
+  };
+
   const isImg = (g) => isImageGraphic(g);
 
   return (
@@ -2436,7 +2494,7 @@ function AdminPanel({ items, onUpdate, onClose }) {
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+      <div style={{ flex: 1, overflowY: mode === "generate" ? "hidden" : "auto", padding: 20 }}>
         {/* List view */}
         {mode === "list" && (
           <>
@@ -2450,6 +2508,11 @@ function AdminPanel({ items, onUpdate, onClose }) {
                 style={{ flex: "1 1 auto", padding: "11px 0", borderRadius: 12, border: "2px solid #9B7FB8",
                   background: "#F8F5FF", color: "#5A2A80", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
                 📁 Bulk import photos
+              </button>
+              <button onClick={() => { setMode("generate"); setGenResults(null); }}
+                style={{ flex: "1 1 auto", padding: "11px 0", borderRadius: 12, border: "2px solid #4E8B80",
+                  background: "#F0FAF8", color: "#2D6B60", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
+                ✨ Generate by category
               </button>
               <button onClick={handleReset}
                 style={{ padding: "11px 16px", borderRadius: 12, border: "2px solid #C07070",
@@ -2558,6 +2621,149 @@ function AdminPanel({ items, onUpdate, onClose }) {
             />
           </>
         )}
+
+        {/* Generate by category view */}
+        {mode === "generate" && (() => {
+          const newIndices = (genResults ?? []).map((r, i) => r._status === "new" ? i : null).filter(i => i !== null);
+          const allNewSelected = newIndices.length > 0 && newIndices.every(i => genSelected.has(i));
+          const cellStyle = { padding: "10px 12px" };
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%" }}>
+              <h3 style={{ margin: 0, color: "#2D3B36" }}>✨ Generate by category</h3>
+
+              {/* Controls */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <input
+                  value={genCategory}
+                  onChange={e => setGenCategory(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && !genLoading && genCategory.trim() && generateCategory()}
+                  placeholder="Category (e.g. fruit, animal, clothing…)"
+                  disabled={genLoading}
+                  style={{ flex: 1, minWidth: 160, padding: "10px 14px", borderRadius: 10,
+                    border: "2px solid #D5CFC4", fontSize: 14, outline: "none",
+                    background: "#FFFDF9", color: "#2D3B36" }}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <label style={{ fontSize: 13, color: "#555", fontWeight: 600, whiteSpace: "nowrap" }}>Count:</label>
+                  <input type="number" value={genCount}
+                    onChange={e => setGenCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 15)))}
+                    disabled={genLoading}
+                    style={{ width: 58, padding: "10px 6px", borderRadius: 10,
+                      border: "2px solid #D5CFC4", fontSize: 14, outline: "none",
+                      background: "#FFFDF9", color: "#2D3B36", textAlign: "center" }}
+                  />
+                </div>
+                <button onClick={generateCategory} disabled={genLoading || !genCategory.trim()}
+                  style={{ padding: "10px 18px", borderRadius: 10, border: "none",
+                    background: genLoading || !genCategory.trim() ? "#A0C4BD" : "linear-gradient(135deg, #4E8B80, #3A7A6F)",
+                    color: "#fff", fontWeight: 700, cursor: genLoading || !genCategory.trim() ? "default" : "pointer",
+                    fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  {genLoading ? <><ThinkingDots /> Generating…</> : "Generate"}
+                </button>
+                <button onClick={() => { setMode("list"); setGenResults(null); setGenCategory(""); setGenCount(15); }}
+                  style={{ padding: "10px 16px", borderRadius: 10,
+                    border: "2px solid #D5CFC4", background: "#FFFDF9",
+                    color: "#666", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>
+                  Cancel
+                </button>
+              </div>
+
+              {/* Results */}
+              {genResults && !genLoading && (
+                <>
+                  {/* Summary + select-all */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 14, color: "#555" }}>
+                      <strong style={{ color: "#4E8B80" }}>{newIndices.length} new</strong>
+                      {" · "}
+                      <strong style={{ color: "#B8862A" }}>{genResults.filter(r => r._status === "duplicate").length} already in library</strong>
+                    </span>
+                    {newIndices.length > 0 && (
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "#555" }}>
+                        <input type="checkbox" checked={allNewSelected}
+                          onChange={e => setGenSelected(e.target.checked ? new Set(newIndices) : new Set())} />
+                        Select all new
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Grid — same style as BulkImportPanel */}
+                  <div style={{ flex: 1, overflow: "auto", minHeight: 0, borderRadius: 12, border: "2px solid #E8E0D0" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ background: "#F5F0E8", borderBottom: "2px solid #E8E0D0" }}>
+                          <th style={{ padding: "10px 12px", width: 36 }}></th>
+                          <th style={{ padding: "10px 12px", textAlign: "center", color: "#555", fontWeight: 700, width: 56 }}>Graphic</th>
+                          <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700, width: "12%" }}>Word</th>
+                          <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700, width: "12%" }}>Category</th>
+                          <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700 }}>💡 Semantic cue</th>
+                          <th style={{ padding: "10px 12px", textAlign: "left", color: "#555", fontWeight: 700 }}>🔤 Phonemic cue</th>
+                          <th style={{ padding: "10px 12px", textAlign: "center", color: "#555", fontWeight: 700, width: 70 }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {genResults.map((row, i) => {
+                          const isNew = row._status === "new";
+                          return (
+                            <tr key={i} style={{
+                              borderBottom: "1px solid #F0EBE0",
+                              background: isNew ? "transparent" : "#FFFBEE",
+                            }}>
+                              <td style={{ ...cellStyle, textAlign: "center" }}>
+                                {isNew && (
+                                  <input type="checkbox" checked={genSelected.has(i)}
+                                    onChange={() => setGenSelected(s => {
+                                      const next = new Set(s);
+                                      if (next.has(i)) next.delete(i); else next.add(i);
+                                      return next;
+                                    })}
+                                    style={{ width: 15, height: 15, cursor: "pointer" }} />
+                                )}
+                              </td>
+                              <td style={{ ...cellStyle, textAlign: "center" }}>
+                                {isImageGraphic(row.graphic)
+                                  ? <img src={row.graphic} alt={row.word} style={{ width: 40, height: 40, objectFit: "contain", borderRadius: 6, border: "2px solid #D5CFC4", display: "block", margin: "0 auto" }} />
+                                  : <span style={{ fontSize: 30 }}>{row.graphic ?? row.emoji ?? "❓"}</span>
+                                }
+                              </td>
+                              <td style={{ ...cellStyle, fontWeight: 700, color: "#2D3B36" }}>{row.word}</td>
+                              <td style={{ ...cellStyle, color: isNew ? "#555" : "#B8862A", fontWeight: isNew ? 400 : 600 }}>{row.category}</td>
+                              <td style={{ ...cellStyle, color: "#666" }}>{row.clue_semantic}</td>
+                              <td style={{ ...cellStyle, color: "#666" }}>{row.clue_phonemic}</td>
+                              <td style={{ ...cellStyle, textAlign: "center" }}>
+                                {isNew
+                                  ? <span style={{ background: "#4E8B8020", color: "#4E8B80", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700 }}>NEW</span>
+                                  : <span style={{ background: "#D4A84330", color: "#B8862A", padding: "3px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700 }}>EXISTS</span>
+                                }
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={handleAddGenerated} disabled={genSelected.size === 0}
+                      style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "none",
+                        background: genSelected.size === 0 ? "#ccc" : "linear-gradient(135deg, #4E8B80, #3A7A6F)",
+                        color: "#fff", fontWeight: 700,
+                        cursor: genSelected.size === 0 ? "default" : "pointer", fontSize: 15 }}>
+                      Add {genSelected.size} item{genSelected.size !== 1 ? "s" : ""} to library
+                    </button>
+                    <button onClick={() => { setMode("list"); setGenResults(null); setGenCategory(""); setGenCount(15); }}
+                      style={{ padding: "12px 18px", borderRadius: 12,
+                        border: "2px solid #D5CFC4", background: "#FFFDF9",
+                        color: "#666", fontWeight: 600, cursor: "pointer", fontSize: 15 }}>
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Bulk import view */}
         {mode === "bulkimport" && (
