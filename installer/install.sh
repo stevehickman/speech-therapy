@@ -58,51 +58,133 @@ if [[ ! -f "$USER_GUIDE_SRC" || ! -f "$TECH_DOCS_SRC" ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-hdr "Step 1 of 5 — Checking prerequisites"
+hdr "Step 1 of 5 — Checking and installing prerequisites"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── Node.js ───────────────────────────────────────────────────────────────────
-NODE_OK=false
-NODE_CMD=""
-
-for candidate in node /usr/local/bin/node /opt/homebrew/bin/node "$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)/bin/node"; do
-  if command -v "$candidate" &>/dev/null 2>&1 || [[ -x "$candidate" ]]; then
-    VER=$("$candidate" --version 2>/dev/null | sed 's/v//')
-    MAJOR=$(echo "$VER" | cut -d. -f1)
-    if [[ "$MAJOR" -ge 18 ]]; then
-      NODE_OK=true
-      NODE_CMD="$candidate"
-      ok "Node.js $VER found"
-      break
+# ── Helper: probe for a working Node ≥ 18 ────────────────────────────────────
+probe_node() {
+  NODE_OK=false
+  NODE_CMD=""
+  local nvm_latest
+  nvm_latest=$(ls "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)
+  for candidate in node /usr/local/bin/node /opt/homebrew/bin/node \
+                   "$HOME/.nvm/versions/node/$nvm_latest/bin/node"; do
+    if command -v "$candidate" &>/dev/null 2>&1 || [[ -x "$candidate" ]]; then
+      local VER MAJOR
+      VER=$("$candidate" --version 2>/dev/null | sed 's/v//')
+      MAJOR=$(echo "$VER" | cut -d. -f1)
+      if [[ "$MAJOR" -ge 18 ]]; then
+        NODE_OK=true
+        NODE_CMD="$candidate"
+        ok "Node.js $VER found"
+        return 0
+      fi
     fi
-  fi
-done
+  done
+  return 1
+}
+
+# ── Node.js ───────────────────────────────────────────────────────────────────
+probe_node || true   # sets NODE_OK / NODE_CMD
 
 if [[ "$NODE_OK" == false ]]; then
-  warn "Node.js 18 or later was not found."
+  warn "Node.js 18 or later was not found — attempting automatic install…"
   echo
-  inf "Install it using one of these methods, then re-run this installer:"
-  echo
-  inf "  Option A — Homebrew (recommended):"
-  inf "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-  inf "    brew install node"
-  echo
-  inf "  Option B — Official installer:"
-  inf "    https://nodejs.org  →  download the LTS .pkg and install it"
-  echo
-  inf "  Option C — nvm (version manager):"
-  inf "    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
-  inf "    source ~/.zshrc  (or ~/.bashrc)"
-  inf "    nvm install --lts"
-  echo
-  read -r -p "  Press Return to close…"; exit 1
+
+  # ── Find or install Homebrew ──────────────────────────────────────────────
+  BREW_CMD=""
+  for brew_path in brew /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    if command -v "$brew_path" &>/dev/null 2>&1 || [[ -x "$brew_path" ]]; then
+      BREW_CMD="$brew_path"
+      break
+    fi
+  done
+
+  if [[ -z "$BREW_CMD" ]]; then
+    inf "Homebrew not found — installing Homebrew first…"
+    inf "(You may be prompted for your Mac login password.)"
+    echo
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # Re-probe for brew after install
+    for brew_path in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+      if [[ -x "$brew_path" ]]; then
+        BREW_CMD="$brew_path"
+        ok "Homebrew installed"
+        break
+      fi
+    done
+  else
+    ok "Homebrew found at $BREW_CMD"
+  fi
+
+  # ── Use Homebrew to install Node ──────────────────────────────────────────
+  if [[ -n "$BREW_CMD" ]]; then
+    inf "Installing Node.js via Homebrew…"
+    "$BREW_CMD" install node 2>&1 | grep -E '(Installed|Already|Error|node)' | sed 's/^/     /' || true
+    # Add Homebrew bin to PATH for this session
+    export PATH="$("$BREW_CMD" --prefix)/bin:$PATH"
+    probe_node || true
+  fi
+
+  # ── If still not found, print manual instructions and exit ────────────────
+  if [[ "$NODE_OK" == false ]]; then
+    err "Could not install Node.js automatically."
+    echo
+    inf "Please install it manually using one of these methods, then re-run this installer:"
+    echo
+    inf "  Option A — Homebrew (recommended):"
+    inf "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+    inf "    brew install node"
+    echo
+    inf "  Option B — Official installer:"
+    inf "    https://nodejs.org  →  download the LTS .pkg and install it"
+    echo
+    inf "  Option C — nvm (version manager):"
+    inf "    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
+    inf "    source ~/.zshrc  (or ~/.bashrc)"
+    inf "    nvm install --lts"
+    echo
+    read -r -p "  Press Return to close…"; exit 1
+  fi
 fi
 
-# Resolve npm alongside node
-NPM_CMD="$(dirname "$NODE_CMD")/npm"
-if ! command -v "$NPM_CMD" &>/dev/null 2>&1 && ! [[ -x "$NPM_CMD" ]]; then
-  NPM_CMD="npm"
+# ── npm ───────────────────────────────────────────────────────────────────────
+# npm always ships alongside node; resolve it from the same bin directory.
+NODE_BIN_DIR="$(dirname "$NODE_CMD")"
+NPM_CMD="$NODE_BIN_DIR/npm"
+
+if [[ ! -x "$NPM_CMD" ]]; then
+  warn "npm not found alongside Node.js — attempting repair…"
+
+  # Try corepack (bundled with Node 16+): enables a managed npm shim
+  COREPACK_CMD="$NODE_BIN_DIR/corepack"
+  if [[ -x "$COREPACK_CMD" ]]; then
+    inf "Enabling npm via corepack…"
+    "$COREPACK_CMD" enable npm 2>/dev/null || true
+  fi
+
+  # If corepack didn't produce npm, try reinstalling Node via Homebrew
+  if [[ ! -x "$NPM_CMD" ]]; then
+    BREW_FOR_REPAIR=""
+    for b in brew /opt/homebrew/bin/brew /usr/local/bin/brew; do
+      if command -v "$b" &>/dev/null 2>&1 || [[ -x "$b" ]]; then
+        BREW_FOR_REPAIR="$b"; break
+      fi
+    done
+    if [[ -n "$BREW_FOR_REPAIR" ]]; then
+      inf "Reinstalling Node.js via Homebrew to repair npm…"
+      "$BREW_FOR_REPAIR" reinstall node 2>&1 | grep -E '(Installed|Error)' | sed 's/^/     /' || true
+    fi
+  fi
+
+  if [[ ! -x "$NPM_CMD" ]]; then
+    err "npm is not available. Please reinstall Node.js from https://nodejs.org and try again."
+    echo; read -r -p "  Press Return to close…"; exit 1
+  fi
 fi
+
+NPM_VER=$("$NPM_CMD" --version 2>/dev/null)
+ok "npm $NPM_VER ready ($(realpath "$NPM_CMD" 2>/dev/null || echo "$NPM_CMD"))"
 
 # ── Xcode command-line tools (needed for npm builds) ─────────────────────────
 if ! xcode-select -p &>/dev/null 2>&1; then
@@ -212,14 +294,29 @@ rm -f "$INSTALL_DIR/src/assets/react.svg" "$INSTALL_DIR/public/vite.svg" 2>/dev/
 ok "Default Vite boilerplate cleaned up"
 
 # ── npm install ───────────────────────────────────────────────────────────────
+# Required runtime packages (beyond what the Vite template provides)
+REQUIRED_PKGS=(react react-dom mespeak)
+
 inf "Running npm install (this may take a minute)…"
 cd "$INSTALL_DIR"
 "$NPM_CMD" install --silent 2>&1 | tail -3 | sed 's/^/     /' || true
 ok "npm packages installed"
 
-inf "Installing speech synthesis package (mespeak)…"
-"$NPM_CMD" install mespeak --silent 2>&1 | tail -3 | sed 's/^/     /' || true
-ok "Speech synthesis package installed"
+# ── Verify and top-up any missing packages ────────────────────────────────────
+MISSING=()
+for pkg in "${REQUIRED_PKGS[@]}"; do
+  if [[ ! -d "$INSTALL_DIR/node_modules/$pkg" ]]; then
+    MISSING+=("$pkg")
+  fi
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  inf "Installing missing packages: ${MISSING[*]}…"
+  "$NPM_CMD" install "${MISSING[@]}" --silent 2>&1 | tail -3 | sed 's/^/     /' || true
+  ok "Installed: ${MISSING[*]}"
+else
+  ok "All required packages present"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 hdr "Step 5 of 5 — Creating Desktop launcher"
@@ -227,20 +324,35 @@ hdr "Step 5 of 5 — Creating Desktop launcher"
 
 LAUNCHER="$HOME/Desktop/Launch PPA Therapy.command"
 
-# Write the launcher — sources shell profile so nvm/Homebrew node is found
+# NODE_CMD and NPM_CMD are baked in at install time so this launcher always
+# uses the exact same Node/npm version that was used to set up the project,
+# even if the user later installs additional Node versions.
 cat > "$LAUNCHER" <<LAUNCHER
 #!/usr/bin/env bash
 # PPA Speech Therapy Suite — Desktop Launcher
 
-# Source shell config so Node.js / nvm is on PATH
-for rc in "\$HOME/.zshrc" "\$HOME/.bashrc" "\$HOME/.bash_profile" "\$HOME/.profile"; do
-  [[ -f "\$rc" ]] && source "\$rc" 2>/dev/null && break
-done
-
-# Also add common Homebrew and nvm paths
-export PATH="\$PATH:/opt/homebrew/bin:/usr/local/bin:\$HOME/.nvm/versions/node/\$(ls \$HOME/.nvm/versions/node 2>/dev/null | sort -V | tail -1)/bin"
-
 INSTALL_DIR="$INSTALL_DIR"
+
+# ── Pinned Node/npm paths (set by installer) ──────────────────────────────────
+PINNED_NODE="$NODE_CMD"
+PINNED_NPM="$NPM_CMD"
+
+# Use pinned paths if they still exist; fall back to whatever is on PATH.
+if [[ -x "\$PINNED_NODE" ]]; then
+  NODE_BIN_DIR="\$(dirname "\$PINNED_NODE")"
+  export PATH="\$NODE_BIN_DIR:\$PATH"
+  NPM_RUN="\$PINNED_NPM"
+else
+  echo "⚠  Pinned Node.js not found at \$PINNED_NODE"
+  echo "   Falling back to system Node — re-run the installer to re-pin."
+  echo
+  # Source shell profiles so nvm / Homebrew node are on PATH
+  for rc in "\$HOME/.zshrc" "\$HOME/.bashrc" "\$HOME/.bash_profile" "\$HOME/.profile"; do
+    [[ -f "\$rc" ]] && source "\$rc" 2>/dev/null && break
+  done
+  export PATH="\$PATH:/opt/homebrew/bin:/usr/local/bin"
+  NPM_RUN="\$(command -v npm 2>/dev/null || echo npm)"
+fi
 
 # Check app is still there
 if [[ ! -d "\$INSTALL_DIR" ]]; then
@@ -253,6 +365,8 @@ lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 
 cd "\$INSTALL_DIR"
 echo "Starting PPA Speech Therapy Suite…"
+echo "Node:  \$(node --version 2>/dev/null)  (\$(command -v node))"
+echo "npm:   \$("\$NPM_RUN" --version 2>/dev/null)  (\$NPM_RUN)"
 echo "Opening browser at http://localhost:5173"
 echo "(Close this window or press Ctrl+C to stop the server)"
 echo
@@ -260,7 +374,7 @@ echo
 # Open browser after a short delay for the server to start
 (sleep 2 && open http://localhost:5173) &
 
-npm run dev
+"\$NPM_RUN" run dev
 LAUNCHER
 
 chmod +x "$LAUNCHER"

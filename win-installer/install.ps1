@@ -68,71 +68,153 @@ if (-not (Test-Path $UserGuideSrc) -or -not (Test-Path $TechDocsSrc)) {
 }
 
 # =============================================================================
-Write-Hdr "Step 1 of 5 — Checking prerequisites"
+Write-Hdr "Step 1 of 5 — Checking and installing prerequisites"
 # =============================================================================
+
+# ── Helper: probe for Node ≥ 18 ───────────────────────────────────────────────
+function Find-Node {
+    $candidates = @(
+        "node",
+        "$env:ProgramFiles\nodejs\node.exe",
+        "${env:ProgramFiles(x86)}\nodejs\node.exe",
+        "$env:LOCALAPPDATA\Programs\nodejs\node.exe"
+    )
+    foreach ($candidate in $candidates) {
+        $resolved = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($resolved) {
+            try {
+                $ver   = & $resolved.Source --version 2>$null
+                $major = [int]($ver -replace 'v(\d+)\..*','$1')
+                if ($major -ge 18) {
+                    $script:NodeCmd = $resolved.Source
+                    $script:NpmCmd  = Join-Path (Split-Path $script:NodeCmd) "npm.cmd"
+                    if (-not (Test-Path $script:NpmCmd)) { $script:NpmCmd = "npm" }
+                    Write-Ok "Node.js $ver found"
+                    return $true
+                }
+            } catch {}
+        }
+    }
+    # Also glob nvm-windows path
+    $nvmNode = Get-ChildItem "$env:APPDATA\nvm\v*\node.exe" -ErrorAction SilentlyContinue |
+               Sort-Object Name | Select-Object -Last 1
+    if ($nvmNode) {
+        try {
+            $ver   = & $nvmNode.FullName --version 2>$null
+            $major = [int]($ver -replace 'v(\d+)\..*','$1')
+            if ($major -ge 18) {
+                $script:NodeCmd = $nvmNode.FullName
+                $script:NpmCmd  = Join-Path (Split-Path $script:NodeCmd) "npm.cmd"
+                if (-not (Test-Path $script:NpmCmd)) { $script:NpmCmd = "npm" }
+                Write-Ok "Node.js $ver found (nvm)"
+                return $true
+            }
+        } catch {}
+    }
+    return $false
+}
 
 # ── Node.js ───────────────────────────────────────────────────────────────────
 $NodeCmd = $null
 $NpmCmd  = $null
 
-# Probe common locations
-$NodeCandidates = @(
-    "node",
-    "$env:ProgramFiles\nodejs\node.exe",
-    "$env:ProgramFiles(x86)\nodejs\node.exe",
-    "$env:APPDATA\nvm\v*\node.exe",
-    "$env:LOCALAPPDATA\Programs\nodejs\node.exe"
-)
+if (-not (Find-Node)) {
+    Write-Warn "Node.js 18 or later was not found — attempting automatic install…"
+    Write-Host ""
 
-foreach ($candidate in $NodeCandidates) {
-    $resolved = Get-Command $candidate -ErrorAction SilentlyContinue
-    if ($resolved) {
+    # ── Try winget ────────────────────────────────────────────────────────────
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Inf "Installing Node.js LTS via winget (this may take a minute)…"
         try {
-            $ver = & $resolved.Source --version 2>$null
-            $major = [int]($ver -replace 'v(\d+)\..*','$1')
-            if ($major -ge 18) {
-                $NodeCmd = $resolved.Source
-                $NpmCmd  = Join-Path (Split-Path $NodeCmd) "npm.cmd"
-                if (-not (Test-Path $NpmCmd)) { $NpmCmd = "npm" }
-                Write-Ok "Node.js $ver found at $NodeCmd"
-                break
+            & winget install --id OpenJS.NodeJS.LTS `
+                --accept-source-agreements --accept-package-agreements --silent `
+                2>&1 | Where-Object { $_ -match '\S' } | ForEach-Object { Write-Inf $_ }
+
+            # Refresh PATH for this session so the new node is discoverable
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                        [System.Environment]::GetEnvironmentVariable("PATH","User")
+
+            if (Find-Node) {
+                Write-Ok "Node.js installed successfully"
             }
-        } catch {}
+        } catch {
+            Write-Warn "winget install failed: $_"
+        }
+    } else {
+        Write-Inf "winget not available — cannot install automatically."
+    }
+
+    # ── If still not found, print manual instructions and exit ────────────────
+    if (-not $NodeCmd) {
+        Write-Err "Could not install Node.js automatically."
+        Write-Host ""
+        Write-Inf "Please install it manually using one of these methods, then re-run this installer:"
+        Write-Host ""
+        Write-Inf "  Option A — Official installer (recommended):"
+        Write-Inf "    https://nodejs.org  →  download the Windows LTS installer (.msi)"
+        Write-Inf "    Run the .msi and keep all defaults, then restart this installer."
+        Write-Host ""
+        Write-Inf "  Option B — winget (Windows Package Manager):"
+        Write-Inf "    Open a new PowerShell window and run:"
+        Write-Inf "    winget install OpenJS.NodeJS.LTS"
+        Write-Host ""
+        Write-Inf "  Option C — nvm-windows:"
+        Write-Inf "    https://github.com/coreybutler/nvm-windows/releases"
+        Write-Inf "    Download nvm-setup.exe, install, then run: nvm install lts"
+        Write-Host ""
+        Pause-Exit 1
     }
 }
 
-# Also try globbing nvm path
-if (-not $NodeCmd) {
-    $nvmNodes = Get-ChildItem "$env:APPDATA\nvm\v*\node.exe" -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
-    if ($nvmNodes) {
-        $ver = & $nvmNodes.FullName --version 2>$null
-        $major = [int]($ver -replace 'v(\d+)\..*','$1')
-        if ($major -ge 18) {
-            $NodeCmd = $nvmNodes.FullName
-            $NpmCmd  = Join-Path (Split-Path $NodeCmd) "npm.cmd"
-            Write-Ok "Node.js $ver found (nvm)"
+# ── npm ───────────────────────────────────────────────────────────────────────
+# npm always ships alongside node; NpmCmd was set inside Find-Node.
+# Verify it actually runs; if not, attempt repair before continuing.
+$NpmOk = $false
+try {
+    $NpmVer = & $NpmCmd --version 2>$null
+    if ($NpmVer) { $NpmOk = $true; Write-Ok "npm $NpmVer ready" }
+} catch {}
+
+if (-not $NpmOk) {
+    Write-Warn "npm not found alongside Node.js — attempting repair…"
+
+    # Try corepack (bundled with Node 16+)
+    $NodeBinDir = Split-Path $NodeCmd
+    $CorepackCmd = Join-Path $NodeBinDir "corepack.cmd"
+    if (-not (Test-Path $CorepackCmd)) { $CorepackCmd = Join-Path $NodeBinDir "corepack" }
+    if (Test-Path $CorepackCmd) {
+        Write-Inf "Enabling npm via corepack…"
+        try { & $CorepackCmd enable npm 2>&1 | Out-Null } catch {}
+    }
+
+    # Re-test after corepack
+    try {
+        $NpmVer = & $NpmCmd --version 2>$null
+        if ($NpmVer) { $NpmOk = $true; Write-Ok "npm $NpmVer ready (repaired via corepack)" }
+    } catch {}
+
+    # Last resort: reinstall Node via winget (npm is always included)
+    if (-not $NpmOk) {
+        $winget = Get-Command winget -ErrorAction SilentlyContinue
+        if ($winget) {
+            Write-Inf "Reinstalling Node.js via winget to repair npm…"
+            try {
+                & winget install --id OpenJS.NodeJS.LTS `
+                    --accept-source-agreements --accept-package-agreements --silent 2>&1 | Out-Null
+                $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                            [System.Environment]::GetEnvironmentVariable("PATH","User")
+                $null = Find-Node
+                $NpmVer = & $NpmCmd --version 2>$null
+                if ($NpmVer) { $NpmOk = $true; Write-Ok "npm $NpmVer ready (repaired via winget)" }
+            } catch {}
         }
     }
-}
 
-if (-not $NodeCmd) {
-    Write-Warn "Node.js 18 or later was not found."
-    Write-Host ""
-    Write-Inf "Install it using one of these methods, then re-run this installer:"
-    Write-Host ""
-    Write-Inf "  Option A — Official installer (recommended):"
-    Write-Inf "    https://nodejs.org  →  download the Windows LTS installer (.msi)"
-    Write-Inf "    Run the .msi and keep all defaults, then restart this installer."
-    Write-Host ""
-    Write-Inf "  Option B — winget (Windows Package Manager):"
-    Write-Inf "    Open a new PowerShell window and run:"
-    Write-Inf "    winget install OpenJS.NodeJS.LTS"
-    Write-Host ""
-    Write-Inf "  Option C — nvm-windows:"
-    Write-Inf "    https://github.com/coreybutler/nvm-windows/releases"
-    Write-Inf "    Download nvm-setup.exe, install, then run: nvm install lts"
-    Write-Host ""
-    Pause-Exit 1
+    if (-not $NpmOk) {
+        Write-Err "npm is not available. Please reinstall Node.js from https://nodejs.org and try again."
+        Pause-Exit 1
+    }
 }
 
 # =============================================================================
@@ -239,24 +321,60 @@ body { margin: 0; }
 Write-Ok "Default Vite boilerplate cleaned up"
 
 # ── npm install ───────────────────────────────────────────────────────────────
+# Required runtime packages (beyond what the Vite template provides)
+$RequiredPkgs = @("react", "react-dom", "mespeak")
+
 Write-Inf "Running npm install (this may take a minute)…"
 & $NpmCmd install --silent 2>&1 | Select-Object -Last 4 | ForEach-Object { Write-Inf $_ }
 Write-Ok "npm packages installed"
 
-Write-Inf "Installing speech synthesis package (mespeak)…"
-& $NpmCmd install mespeak --silent 2>&1 | Select-Object -Last 4 | ForEach-Object { Write-Inf $_ }
-Write-Ok "Speech synthesis package installed"
+# ── Verify and top-up any missing packages ────────────────────────────────────
+$MissingPkgs = @()
+foreach ($pkg in $RequiredPkgs) {
+    if (-not (Test-Path (Join-Path $InstallDir "node_modules\$pkg"))) {
+        $MissingPkgs += $pkg
+    }
+}
+
+if ($MissingPkgs.Count -gt 0) {
+    $MissingStr = $MissingPkgs -join ", "
+    Write-Inf "Installing missing packages: $MissingStr…"
+    & $NpmCmd install $MissingPkgs --silent 2>&1 | Select-Object -Last 4 | ForEach-Object { Write-Inf $_ }
+    Write-Ok "Installed: $MissingStr"
+} else {
+    Write-Ok "All required packages present"
+}
 
 # =============================================================================
 Write-Hdr "Step 5 of 5 — Creating Desktop shortcut & Start Menu entry"
 # =============================================================================
 
 # ── Write a launcher .bat ─────────────────────────────────────────────────────
-$LauncherBat = Join-Path $InstallDir "launch.bat"
+# NodeBinDir and NpmCmd are baked in at install time so the launcher always
+# uses the exact Node/npm version that set up the project.
+$LauncherBat  = Join-Path $InstallDir "launch.bat"
+$NodeBinDir   = Split-Path $NodeCmd          # e.g. C:\Program Files\nodejs
+$PinnedNpmCmd = $NpmCmd                      # e.g. C:\Program Files\nodejs\npm.cmd
+
 @"
 @echo off
 title PPA Speech Therapy Suite
 cd /d "$InstallDir"
+
+REM ── Pinned Node/npm paths (set by installer) ──────────────────────────────
+set "PINNED_NODE_DIR=$NodeBinDir"
+set "PINNED_NPM=$PinnedNpmCmd"
+
+REM Use pinned Node directory if it still exists; fall back to system PATH.
+if exist "%PINNED_NODE_DIR%\node.exe" (
+    set "PATH=%PINNED_NODE_DIR%;%PATH%"
+    set "NPM_RUN=%PINNED_NPM%"
+) else (
+    echo WARNING: Pinned Node.js not found at %PINNED_NODE_DIR%
+    echo          Falling back to system Node -- re-run the installer to re-pin.
+    echo.
+    set "NPM_RUN=npm"
+)
 
 REM Kill any existing process on port 5173
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":5173"') do taskkill /f /pid %%a 2>nul
@@ -269,7 +387,7 @@ echo.
 REM Open browser after 3 seconds
 start /min "" cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:5173"
 
-npm run dev
+"%NPM_RUN%" run dev
 "@ | Set-Content $LauncherBat -Encoding ASCII
 
 # ── Desktop shortcut ─────────────────────────────────────────────────────────
