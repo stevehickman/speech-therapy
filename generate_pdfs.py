@@ -537,17 +537,14 @@ def build_user_guide(path):
     story.append(sr_box)
     story.append(Spacer(1, 0.2*cm))
 
-    # Admin callout (unchanged)
     admin_box = CalloutBox(
         icon="💡",
         title="Admin — customising the word list",
         body_lines=[
-            ("In Admin mode you can add picture cards by typing a word and either letting "
-             "the app look up an emoji automatically, or uploading a photo from the device "
-             "camera roll. You can also edit cue text, adjust categories, and delete cards.", False),
-            ("", False),
-            ("Export the customised list as a .ppa file to share with other devices or "
-             "to use as a backup.", False),
+            ("Add item: type a word; AI looks up an emoji and fills in cues.", False),
+            ("Bulk import photos: select multiple images; AI fills empty word fields.", False),
+            ("Generate by category: enter a category name and count; AI generates nouns.", False),
+            ("Edit / Delete: change any field or remove cards. Export list as a .ppa file.", False),
         ],
         bg=TIP_BG, border=TIP_BORDER,
     )
@@ -667,6 +664,8 @@ def build_user_guide(path):
 
     story.append(Paragraph("Naming Module Admin", ST['subsubsection']))
     story.append(Paragraph("• <b>Add item</b> — type a word; the app will look up an emoji automatically (internet required), or you can upload an image.", ST['bullet']))
+    story.append(Paragraph("• <b>Bulk import photos</b> — drag-and-drop or select multiple images at once. A grid shows each photo with fields for word, category, semantic cue, and phonemic cue. Blurring the Word field auto-fills the other three via AI. \"Generate AI defaults for all\" processes every row at once. Only rows with all fields filled are saved; words already in the list are skipped.", ST['bullet']))
+    story.append(Paragraph("• <b>Generate by category</b> — type a category name and choose a count (default 15, max 50). The app calls the AI to generate the most common nouns in that category with emoji, semantic cue, and phonemic cue pre-filled. New items are pre-selected; duplicates are shown with their existing values and skipped automatically.", ST['bullet']))
     story.append(Paragraph("• <b>Edit item</b> — change the word, graphic, semantic cue, or phonemic cue.", ST['bullet']))
     story.append(Paragraph("• <b>Delete item</b> — removes the card from the practice list.", ST['bullet']))
     story.append(Paragraph("• <b>Export list</b> — saves the current list as a .ppa file.", ST['bullet']))
@@ -1259,6 +1258,122 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(PageBreak())
 
+    # ── SECTION 5.5 — AI-ASSISTED ITEM DEFAULTS ───────────────────────────────
+    story.append(Paragraph("5.5  AI-Assisted Item Defaults", ST['subsection']))
+    story.append(Paragraph(
+        "When the <b>Word</b> field in the Add Item form (AdminPanel → ItemForm) loses focus "
+        "and contains a non-empty value, <code>generateDefaults(word)</code> is called via "
+        "<code>fetchAnthropicApi</code>. The function requests a JSON object from the Claude "
+        "API containing four fields:",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("•  <code>graphic</code> — a single emoji that best represents the word", ST['bullet']))
+    story.append(Paragraph('•  <code>category</code> — a short category label (e.g. \u201cfruit\u201d)', ST['bullet']))
+    story.append(Paragraph('•  <code>clue_semantic</code> — a short sentence cue (e.g. \u201cIt\'s a fruit you eat\u201d)', ST['bullet']))
+    story.append(Paragraph('•  <code>clue_phonemic</code> — a phonemic cue noting the starting sound (e.g. \u201cStarts with \'A\'…\u201d)', ST['bullet']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "Each field is applied only if it is still at its blank default "
+        "(<code>❓</code> for graphic, empty string for the rest) — any value already "
+        "typed by the admin is preserved. A <code>&lt;ThinkingDots /&gt;</code> spinner "
+        "is shown during the request. Failures are silent; all fields remain editable. "
+        "Requires an internet connection and a valid API key.",
+        ST['normal']))
+    story.append(Spacer(1, 0.2*cm))
+
+    # ── SECTION 5.6 — BULK IMPORT PANEL ───────────────────────────────────────
+    story.append(Paragraph("5.6  BulkImportPanel", ST['subsection']))
+    story.append(Paragraph(
+        "Renders inside AdminPanel when <code>mode === \"bulkimport\"</code>. Lets the admin "
+        "select multiple image files at once (drag-and-drop or multi-select file browser; "
+        "accepts image/*, .heic, .heif). Each file is compressed to a base64 JPEG via "
+        "<code>compressImageFile</code> (240 px max side, 0.75 quality) and added as a draft "
+        "row in an editable grid table.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("Grid columns", ST['subsubsection']))
+    story.append(Paragraph("•  <b>Photo</b> — compressed thumbnail (52 × 52 px).", ST['bullet']))
+    story.append(Paragraph(
+        "•  <b>Word</b> — text input; blurring the field fires "
+        "<code>generateForDraft(id, word)</code>, which calls <code>fetchAnthropicApi</code> "
+        "to suggest category, clue_semantic, and clue_phonemic. Only empty fields are filled. "
+        "A ThinkingDots spinner appears during the request.",
+        ST['bullet']))
+    story.append(Paragraph("•  <b>Category, Semantic cue, Phonemic cue</b> — free-text inputs.", ST['bullet']))
+    story.append(Paragraph("•  <b>Remove</b> — deletes the row from the draft list.", ST['bullet']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "\"Generate AI defaults for all\" iterates the draft list sequentially, calling "
+        "<code>generateForDraft</code> for each row that has a non-empty word.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "\"Save N items\" calls <code>onSaveAll</code> passing rows where all four fields "
+        "(word, category, clue_semantic, clue_phonemic) are non-empty. "
+        "<code>handleBulkSave</code> deduplicates against the existing item list by word "
+        "(case-insensitive) before appending.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "Filename inference: camera-roll names matching "
+        "<code>/^(img|dsc|photo|picture|p|image|pic)[-_]?\\d+$/i</code> are left blank; "
+        "other filenames are lowercased with hyphens and underscores converted to spaces "
+        "and used as the initial word value.",
+        ST['normal']))
+    story.append(Spacer(1, 0.2*cm))
+
+    # ── SECTION 5.7 — GENERATE BY CATEGORY ────────────────────────────────────
+    story.append(Paragraph("5.7  Generate by Category", ST['subsection']))
+    story.append(Paragraph(
+        "Renders inside AdminPanel when <code>mode === \"generate\"</code>. Lets the admin "
+        "auto-populate a category with the most common nouns using a single AI call.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("Controls", ST['subsubsection']))
+    story.append(Paragraph('•  <b>Category input</b> — free-text field for the category name (e.g. "fruit", "animal", "clothing").', ST['bullet']))
+    story.append(Paragraph("•  <b>Count</b> — number input, 1–50, default 15.", ST['bullet']))
+    story.append(Paragraph("•  <b>Generate</b> — fires a single <code>fetchAnthropicApi</code> call requesting the N most common nouns in the category. The prompt asks for a JSON array of objects, each with <code>word</code>, <code>graphic</code> (emoji), <code>clue_semantic</code>, and <code>clue_phonemic</code>. A <code>&lt;ThinkingDots /&gt;</code> spinner is shown while the request is in flight.", ST['bullet']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("Results grid", ST['subsubsection']))
+    story.append(Paragraph(
+        "Uses the same grid style as BulkImportPanel. Columns: checkbox, Graphic, Word, "
+        "Category, Semantic cue, Phonemic cue, Status.",
+        ST['normal']))
+    story.append(Spacer(1, 0.05*cm))
+    story.append(Paragraph(
+        "Each generated noun is classified via <code>checkDuplicate()</code>:",
+        ST['normal']))
+    story.append(Spacer(1, 0.05*cm))
+    story.append(Paragraph(
+        "•  <b>New items</b> — shown with a green <b>NEW</b> badge and pre-selected checkbox. "
+        "Category is set to the new category name.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "•  <b>Duplicates</b> — shown with an amber <b>EXISTS</b> badge, no checkbox, and "
+        "all existing values including the original category displayed in amber. "
+        "Duplicates are never added.",
+        ST['bullet']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "A summary bar above the grid shows the count of new and existing items, plus a "
+        "\"Select all new\" checkbox. The grid scrolls independently; controls and the "
+        "\"Add N items to library\" action button remain pinned.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("Actions", ST['subsubsection']))
+    story.append(Paragraph(
+        "\"Add N items to library\" calls <code>handleAddGenerated()</code>, which filters "
+        "to selected new items, strips the internal <code>_status</code> field, assigns a "
+        "<code>custom-{timestamp}</code> id to each, appends them to the item list via "
+        "<code>onUpdate</code>, and returns to list view.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "If the API call fails (no key, network error), an alert is shown and the controls "
+        "remain active so the admin can retry.",
+        ST['normal']))
+    story.append(PageBreak())
+
     # ── SECTION 6 — SENTENCE BUILDER ─────────────────────────────────────────
     story.append(section_rule())
     story.append(Paragraph("6.  Sentence Builder Module (SentenceBuilderModule.jsx)", ST['section']))
@@ -1548,7 +1663,7 @@ def build_tech_ref(path):
 #  MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
-BASE = "/Users/stevehickman/Documents/GitHub/speech-therapy/.claude/worktrees/serene-greider"
+BASE = "/Users/stevehickman/Documents/GitHub/speech-therapy/.claude/worktrees/priceless-nash"
 
 USER_GUIDE_PATHS = [
     f"{BASE}/ppa-speech-therapy-user-guide.pdf",
