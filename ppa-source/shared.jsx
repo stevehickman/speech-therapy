@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from "react";
 import { CLAUDE_MODEL, SYSTEM_PROMPT } from "./data/config.js";
+import { isImageGraphic } from "./data/dictionary.js";
 
 // ── fetchAnthropicApi ──────────────────────────────────────────────────────────
 // Low-level fetch helper with all required Anthropic headers pre-applied.
@@ -63,6 +64,66 @@ export function Btn({ color, onClick, children }) {
       onMouseOut={e => e.target.style.opacity = 1}>
       {children}
     </button>
+  );
+}
+
+// ── ZoomableGraphic ────────────────────────────────────────────────────────────
+// Renders a graphic (emoji or image) that opens a 2× popup overlay on click.
+// width / height apply to img elements; fontSize applies to emoji spans.
+// imgStyle / spanStyle are merged into the respective display element's style.
+export function ZoomableGraphic({ graphic, alt = "", width, height, fontSize, imgStyle = {}, spanStyle = {} }) {
+  const [zoomed, setZoomed] = useState(false);
+  const isImg = isImageGraphic(graphic);
+  useEffect(() => {
+    if (!zoomed) return;
+    const onKey = e => { if (e.key === "Escape") setZoomed(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomed]);
+  return (
+    <>
+      <span
+        onClick={() => setZoomed(true)}
+        style={{ cursor: "zoom-in", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+      >
+        {isImg
+          ? <img src={graphic} alt={alt} style={{ width, height, objectFit: "contain", ...imgStyle }} />
+          : <span style={{ fontSize, lineHeight: 1, ...spanStyle }}>{graphic}</span>
+        }
+      </span>
+      {zoomed && (
+        <div
+          onClick={() => setZoomed(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 10000, cursor: "zoom-out",
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#fff", borderRadius: 20, border: "3px solid #D5CFC4",
+              padding: 24, display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "default", boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+            }}
+          >
+            {isImg
+              ? <img
+                  src={graphic} alt={alt}
+                  style={{
+                    width: width * 2, height: height * 2,
+                    maxWidth: "calc(90vw - 48px)", maxHeight: "calc(90vh - 48px)",
+                    objectFit: "contain",
+                  }}
+                />
+              : <span style={{ fontSize: fontSize * 2, lineHeight: 1 }}>{graphic}</span>
+            }
+          </div>
+          }
+        </div>
+      )}
+    </>
   );
 }
 

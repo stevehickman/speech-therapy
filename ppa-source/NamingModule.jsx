@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { NAMING_ITEMS } from "./data/namingItems.js";
 import { CLAUDE_MODEL, SYSTEM_PROMPT } from "./data/config.js";
-import { CallAPI, ThinkingDots, fetchAnthropicApi, checkDuplicate, DuplicateConflictModal } from "./shared.jsx";
+import { CallAPI, ThinkingDots, fetchAnthropicApi, checkDuplicate, DuplicateConflictModal, ZoomableGraphic } from "./shared.jsx";
 import {
   PPA_EXT,
   ppaGetSnapshots, ppaFilesForModule, ppaAddKnownFile,
@@ -1074,10 +1074,7 @@ function AdminPanel({ items, onUpdate, onClose }) {
                   {/* Graphic */}
                   <div style={{ width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center",
                     background: "#F5F0E8", borderRadius: 12, flexShrink: 0, overflow: "hidden" }}>
-                    {isImg(item.graphic)
-                      ? <img src={item.graphic} alt={item.word} style={{ width: 44, height: 44, objectFit: "contain" }} />
-                      : <span style={{ fontSize: 36 }}>{item.graphic ?? item.emoji}</span>
-                    }
+                    <ZoomableGraphic graphic={item.graphic ?? item.emoji} alt={item.word} width={44} height={44} fontSize={36} />
                   </div>
 
                   {/* Info */}
@@ -1534,10 +1531,7 @@ function Practice({ items, addToLog }) {
       <div style={{ background: "#FFFDF9", borderRadius: 20, padding: 32, textAlign: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.06)", border: "1px solid #E8E0D0" }}>
         {/* Graphic */}
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: 110, marginBottom: 4 }}>
-          {isImg
-            ? <img src={graphic} alt={item.word} style={{ maxWidth: 100, maxHeight: 100, objectFit: "contain", borderRadius: 16 }} />
-            : <span style={{ fontSize: 96, lineHeight: 1 }}>{graphic}</span>
-          }
+          <ZoomableGraphic graphic={graphic} alt={item.word} width={100} height={100} fontSize={96} imgStyle={{ borderRadius: 16 }} />
         </div>
         <div style={{ fontSize: 14, color: "#999", marginTop: 8, textTransform: "uppercase", letterSpacing: 2 }}>What is this called?</div>
 
