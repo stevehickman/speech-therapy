@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ASSESSMENT_TASKS } from "./data/assessmentTasks.js";
-import { useDictionaryLookup, isImageGraphic } from "./data/dictionary.js";
-import { CallAPI, ThinkingDots, Btn } from "./shared.jsx";
+import { useDictionaryLookup } from "./data/dictionary.js";
+import { CallAPI, ThinkingDots, Btn, ZoomableGraphic } from "./shared.jsx";
 
 export default function AssessmentModule({ addToLog }) {
   const graphicLookup = useDictionaryLookup();
@@ -94,9 +94,7 @@ export default function AssessmentModule({ addToLog }) {
               ?? currentItemData.graphic ?? currentItemData.emoji;
             return (
               <>
-                {isImageGraphic(g)
-                  ? <img src={g} alt="" style={{ width: 100, height: 100, objectFit: "contain", borderRadius: 16, border: "2px solid #E8E0D0" }} />
-                  : <div style={{ fontSize: 80 }}>{g}</div>}
+                <ZoomableGraphic graphic={g} width={100} height={100} fontSize={80} imgStyle={{ borderRadius: 16, border: "2px solid #E8E0D0" }} />
                 <div style={{ fontSize: 14, color: "#999", margin: "12px 0 24px" }}>What is this called?</div>
               </>
             );

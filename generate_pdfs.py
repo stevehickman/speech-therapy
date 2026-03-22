@@ -462,6 +462,7 @@ def build_user_guide(path):
     story.append(Paragraph("• Read the prompt aloud to the patient.", ST['bullet']))
     story.append(Paragraph("• Record the response using the text box or voice notes.", ST['bullet']))
     story.append(Paragraph("• Tap <b>Next</b> to advance.", ST['bullet']))
+    story.append(Paragraph("• Tap the picture to enlarge it to twice its size. Tap outside the picture or press <b>Escape</b> to close.", ST['bullet']))
     story.append(Spacer(1, 0.25*cm))
 
     # Naming Practice — with NEW content
@@ -510,6 +511,12 @@ def build_user_guide(path):
         "When the patient types their answer, tap <b>Got it!</b> to record a correct response "
         "and get Dr. Aria's feedback, or use the cue buttons if more support is needed. "
         "Tap <b>Next word →</b> after Dr. Aria responds (or immediately if AI is not connected).",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "Tap the picture card graphic to enlarge it to twice its size — useful if the image "
+        "is small or the patient needs a closer look. Tap outside the enlarged image or press "
+        "<b>Escape</b> to dismiss it.",
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
@@ -933,7 +940,7 @@ def build_tech_ref(path):
         "  NamingModule.jsx              # Picture-naming practice with spaced repetition",
         "  SentenceBuilderModule.jsx     # Visual drag-and-drop sentence construction",
         "  ExportImportSystem.jsx        # .ppa / .ppabak export, import, and backup logic",
-        "  shared.jsx                    # Shared utilities: fetchAnthropicApi, CallAPI, ThinkingDots",
+        "  shared.jsx                    # Shared utilities: fetchAnthropicApi, CallAPI, ThinkingDots, ZoomableGraphic",
         "  data/",
         "    config.js                   # CLAUDE_MODEL constant + Dr. Aria SYSTEM_PROMPT",
         "    dictionary.js               # Unified word->{graphic, cues, categories} store",
@@ -1000,6 +1007,28 @@ def build_tech_ref(path):
     story.append(Paragraph("2.3  <ThinkingDots />", ST['subsection']))
     story.append(Paragraph(
         "Animated three-dot spinner. Use during any AI loading state.",
+        ST['normal']))
+    story.append(Spacer(1, 0.2*cm))
+
+    story.append(Paragraph("2.4  <ZoomableGraphic />", ST['subsection']))
+    story.append(Paragraph(
+        "Wraps any graphic (emoji or image) and makes it clickable. On click, a full-screen "
+        "modal overlay opens showing the graphic at twice its normal display size, with a white "
+        "background and border. The overlay closes when the user clicks outside the graphic "
+        "or presses <b>Escape</b>. The ESC listener is registered only while the overlay is "
+        "open and is cleaned up on close.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "Props: <code>graphic</code> (string — emoji or image src), <code>alt</code> (string), "
+        "<code>width</code> / <code>height</code> (px, for image elements), "
+        "<code>fontSize</code> (px, for emoji spans), "
+        "<code>imgStyle</code> / <code>spanStyle</code> (merged into the display element).",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "Used by: NamingModule (practice card, item list) and AssessmentModule "
+        "(confrontation naming task). Import from <code>shared.jsx</code>; never inline.",
         ST['normal']))
     story.append(PageBreak())
 
@@ -1635,6 +1664,11 @@ def build_tech_ref(path):
     story.append(section_rule())
     story.append(Paragraph("12.  Changelog", ST['section']))
     story.append(Spacer(1, 0.1*cm))
+
+    story.append(Paragraph("Version 4.0.1  (March 2026)", ST['subsection']))
+    story.append(Paragraph("• Added click-to-zoom for graphics: tapping any picture card in Naming Practice or Assessment opens a 2× popup. Press Escape or click outside to close.", ST['bullet']))
+    story.append(Paragraph("• Added <code>ZoomableGraphic</code> shared component to <code>shared.jsx</code>.", ST['bullet']))
+    story.append(Spacer(1, 0.2*cm))
 
     story.append(Paragraph("Version 4.0.0  (March 2026)", ST['subsection']))
     story.append(Paragraph("• Added meSpeak audio hints with vowel-anchored pronunciation in Naming module.", ST['bullet']))
