@@ -1,7 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 import { TOOLS } from "./data/tools.js";
 import { ppaBackupIsStale, ppaDoBackup } from "./ExportImportSystem.jsx";
+
+// Familiar modules
+import { bktInitialState, bktUpdate, bktAllTrajectories, bktSnapshotFromSession, applyTimeDecay, BKT_PARAMS, CONDITION_PROFILES, DEFAULT_CONDITION, logEntryToAttempt } from "./lib/bkt.js";
+import { loadProfile, saveProfile, touchStreak, DEFAULT_PROFILE } from "./ProfileModule.jsx";
+import { loadContentItems, saveContentItems } from "./ContentLibraryModule.jsx";
+import { loadFamilyMembers, saveFamilyMembers } from "./FamilyModule.jsx";
+
+// Speech-therapy modules
 import NamingModule from "./NamingModule.jsx";
 import SentenceBuilderModule from "./SentenceBuilderModule.jsx";
 import TherapistModule from "./TherapistModule.jsx";
@@ -12,14 +20,88 @@ import AssessmentModule from "./AssessmentModule.jsx";
 import ProgressModule from "./ProgressModule.jsx";
 import VideoModule from "./VideoModule.jsx";
 
+// Familiar-derived modules
+import MemoryModule from "./MemoryModule.jsx";
+import FamilyModule from "./FamilyModule.jsx";
+import ContentLibraryModule from "./ContentLibraryModule.jsx";
+import ProfileModule from "./ProfileModule.jsx";
+
+// localStorage keys for Familiar state
+const BKT_KEY          = "fam_bkt";
+const BKT_SNAPSHOTS_KEY = "fam_bkt_snapshots";
+const LAST_SESSION_KEY  = "fam_last_session_ms";
+
+function loadBkt() {
+  try { const s = localStorage.getItem(BKT_KEY); return s ? JSON.parse(s) : bktInitialState(); } catch { return bktInitialState(); }
+}
+function saveBkt(bkt) { try { localStorage.setItem(BKT_KEY, JSON.stringify(bkt)); } catch {} }
+
+function loadSnapshots() {
+  try { const s = localStorage.getItem(BKT_SNAPSHOTS_KEY); return s ? JSON.parse(s) : {}; } catch { return {}; }
+}
+function saveSnapshots(snaps) { try { localStorage.setItem(BKT_SNAPSHOTS_KEY, JSON.stringify(snaps)); } catch {} }
+
+function loadLastSessionMs() {
+  try { const s = localStorage.getItem(LAST_SESSION_KEY); return s ? Number(s) : null; } catch { return null; }
+}
+function saveLastSessionMs(ms) { try { localStorage.setItem(LAST_SESSION_KEY, String(ms)); } catch {} }
+
+// Apply time-decay to BKT on first load (if last session was yesterday or earlier)
+function initBktWithDecay(bkt, lastSessionMs, conditionType) {
+  if (!lastSessionMs) return bkt;
+  const days = Math.max(0, Date.now() - lastSessionMs) / 86_400_000;
+  if (days < 0.5) return bkt; // same-day, no decay
+  const decayed = { ...bkt };
+  for (const skill of Object.keys(BKT_PARAMS)) {
+    if (decayed[skill] != null) decayed[skill] = applyTimeDecay(decayed[skill], days, skill, conditionType);
+  }
+  return decayed;
+}
+
 // ---- APP ----
 export default function App() {
   const [active, setActive] = useState("therapist");
   const [appBackupStale, setAppBackupStale] = useState(() => ppaBackupIsStale(7));
+
+  // Session log (existing speech-therapy mechanism)
   const _TODAY_KEY = `ppa_progress_${new Date().toISOString().slice(0, 10)}`;
   const [sessionLog, setSessionLog] = useState(() => {
     try { const s = localStorage.getItem(_TODAY_KEY); return s ? JSON.parse(s) : []; } catch { return []; }
   });
+
+  // Familiar state
+  const [profile, setProfile]       = useState(() => loadProfile());
+  const [contentItems, setContentItems] = useState(() => loadContentItems());
+  const [familyMembers, setFamilyMembers] = useState(() => loadFamilyMembers());
+
+  const [lastSessionMs, setLastSessionMs] = useState(() => loadLastSessionMs());
+  const [bkt, setBkt] = useState(() => {
+    const raw = loadBkt();
+    const last = loadLastSessionMs();
+    const prof = loadProfile();
+    return initBktWithDecay(raw, last, prof.conditionType || DEFAULT_CONDITION);
+  });
+  const [bktSnapshots, setBktSnapshots] = useState(() => loadSnapshots());
+
+  // Track whether we've taken a snapshot today already
+  const snapshotTakenRef = useRef(false);
+
+  // Take a BKT snapshot at start of first activity each day
+  const maybeSnapshot = useCallback((nextBkt) => {
+    if (snapshotTakenRef.current) return;
+    snapshotTakenRef.current = true;
+    const snap = bktSnapshotFromSession(nextBkt);
+    setBktSnapshots(prev => {
+      const next = { ...prev };
+      for (const [skill, s] of Object.entries(snap)) {
+        next[skill] = [...(next[skill] || []), s].slice(-50); // keep last 50 snapshots per skill
+      }
+      saveSnapshots(next);
+      return next;
+    });
+  }, []);
+
+  // Add to session log + update BKT incrementally
   const addToLog = useCallback((entry) => {
     const key = `ppa_progress_${new Date().toISOString().slice(0, 10)}`;
     setSessionLog(l => {
@@ -27,27 +109,77 @@ export default function App() {
       try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
       return next;
     });
-  }, []);
 
-  // Refresh backup staleness whenever the active module changes (content may have changed)
+    // BKT update from this activity
+    const attempt = logEntryToAttempt(entry);
+    if (attempt) {
+      setBkt(prev => {
+        maybeSnapshot(prev);
+        const skill = attempt.skill;
+        const prior = prev[skill] ?? BKT_PARAMS[skill].p_known0;
+        const conditionType = loadProfile().conditionType || DEFAULT_CONDITION;
+        const next = { ...prev, [skill]: bktUpdate(prior, attempt.score >= 70, attempt.hintUsed, skill, conditionType) };
+        saveBkt(next);
+        const nowMs = Date.now();
+        saveLastSessionMs(nowMs);
+        setLastSessionMs(nowMs);
+        return next;
+      });
+    }
+  }, [maybeSnapshot]);
+
+  const handleProfileSave = (newProfile) => {
+    setProfile(newProfile);
+    // Recalculate streak
+    const touched = touchStreak(newProfile);
+    setProfile(touched);
+    saveProfile(touched);
+  };
+
+  const handleContentUpdate = (items) => {
+    setContentItems(items);
+    saveContentItems(items);
+  };
+
+  const handleFamilyUpdate = (members) => {
+    setFamilyMembers(members);
+    saveFamilyMembers(members);
+  };
+
+  // Refresh backup staleness whenever the active module changes
   useEffect(() => { setAppBackupStale(ppaBackupIsStale(7)); }, [active]);
-  // Also recheck on window focus so the badge appears even if the user stays on the same module
   useEffect(() => {
     const onFocus = () => setAppBackupStale(ppaBackupIsStale(7));
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  // Touch streak on first open each day
+  useEffect(() => {
+    const updated = touchStreak(profile);
+    if (updated.lastSessionDate !== profile.lastSessionDate || updated.streak !== profile.streak) {
+      setProfile(updated);
+      saveProfile(updated);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const conditionType = profile.conditionType || DEFAULT_CONDITION;
+  const conditionLabel = CONDITION_PROFILES[conditionType]?.label ?? "";
+
   const ActiveModule = {
-    therapist: <TherapistModule sessionLog={sessionLog} addToLog={addToLog} />,
-    naming: <NamingModule addToLog={addToLog} />,
-    assessment: <AssessmentModule addToLog={addToLog} />,
-    repetition: <RepetitionModule addToLog={addToLog} />,
-    sentence: <SentenceModule addToLog={addToLog} />,
-    scripts: <ScriptsModule />,
+    therapist:        <TherapistModule sessionLog={sessionLog} addToLog={addToLog} />,
+    naming:           <NamingModule addToLog={addToLog} contentItems={contentItems} />,
+    memory:           <MemoryModule members={familyMembers} addToLog={addToLog} />,
+    assessment:       <AssessmentModule addToLog={addToLog} />,
+    repetition:       <RepetitionModule addToLog={addToLog} />,
+    sentence:         <SentenceModule addToLog={addToLog} />,
+    scripts:          <ScriptsModule />,
     sentence_builder: <SentenceBuilderModule addToLog={addToLog} />,
-    video: <VideoModule addToLog={addToLog} />,
-    progress: <ProgressModule sessionLog={sessionLog} />,
+    video:            <VideoModule addToLog={addToLog} />,
+    progress:         <ProgressModule sessionLog={sessionLog} bkt={bkt} bktSnapshots={bktSnapshots} conditionType={conditionType} />,
+    family:           <FamilyModule members={familyMembers} onUpdate={handleFamilyUpdate} />,
+    content:          <ContentLibraryModule items={contentItems} onUpdate={handleContentUpdate} />,
+    profile:          <ProfileModule profile={profile} onSave={handleProfileSave} />,
   }[active];
 
   const activeTool = TOOLS.find(t => t.id === active);
@@ -61,53 +193,61 @@ export default function App() {
       `}</style>
 
       {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, #2D5A54 0%, #1E3D3A 100%)", padding: "18px 24px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
-        <div style={{ fontSize: 30 }}>🌿</div>
+      <div style={{ background: "linear-gradient(135deg, #2D5A54 0%, #1E3D3A 100%)", padding: "16px 24px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
+        <div style={{ fontSize: 28 }}>🌿</div>
         <div>
-          <div style={{ color: "#E8F4F2", fontSize: 20, fontWeight: 700, letterSpacing: 0.5 }}>PPA Speech Therapy Suite</div>
-          <div style={{ color: "#7BAE9F", fontSize: 13 }}>AI-Assisted Language Therapy • Dr. Aria, SLP</div>
+          <div style={{ color: "#E8F4F2", fontSize: 19, fontWeight: 700, letterSpacing: 0.5 }}>
+            {profile.name ? `${profile.name}'s Therapy Suite` : "Familiar Therapy Suite"}
+          </div>
+          <div style={{ color: "#7BAE9F", fontSize: 12 }}>
+            {conditionLabel} • AI-Assisted Language Therapy • Dr. Aria, SLP
+          </div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          {profile.streak > 0 && (
+            <div style={{ background: "#4E8B8030", borderRadius: 10, padding: "5px 12px", display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ fontSize: 16 }}>🔥</span>
+              <span style={{ color: "#E8B84B", fontSize: 13, fontWeight: 700 }}>{profile.streak}</span>
+            </div>
+          )}
           {appBackupStale && (
             <button
-              onClick={() => { setAppBackupStale(false); ppaDoBackup("ppa-therapy-backup"); setTimeout(() => setAppBackupStale(ppaBackupIsStale(7)), 500); }}
-              title="Backup recommended — click to download a full backup"
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
-                background: "#D4A84330", border: "1px solid #D4A843", borderRadius: 10,
-                cursor: "pointer", color: "#D4A843", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>
-              💾 Backup recommended
+              onClick={() => { setAppBackupStale(false); ppaDoBackup("therapy-backup"); setTimeout(() => setAppBackupStale(ppaBackupIsStale(7)), 500); }}
+              title="Backup recommended — click to download"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "#D4A84330", border: "1px solid #D4A843", borderRadius: 10, cursor: "pointer", color: "#D4A843", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>
+              💾 Backup
             </button>
           )}
-          <div style={{ background: "#4E8B8030", borderRadius: 10, padding: "6px 14px" }}>
-            <span style={{ color: "#7BAE9F", fontSize: 13 }}>Session: {sessionLog.length} activities</span>
+          <div style={{ background: "#4E8B8030", borderRadius: 10, padding: "5px 12px" }}>
+            <span style={{ color: "#7BAE9F", fontSize: 12 }}>Session: {sessionLog.length} activities</span>
           </div>
         </div>
       </div>
 
-      <div style={{ display: "flex", flex: 1, overflow: "hidden", maxHeight: "calc(100vh - 72px)" }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", maxHeight: "calc(100vh - 66px)" }}>
         {/* Sidebar */}
-        <div style={{ width: 190, background: "#FFFDF9", borderRight: "1px solid #E8E0D0", display: "flex", flexDirection: "column", padding: "12px 8px", gap: 4, overflowY: "auto", flexShrink: 0 }}>
+        <div style={{ width: 190, background: "#FFFDF9", borderRight: "1px solid #E8E0D0", display: "flex", flexDirection: "column", padding: "10px 8px", gap: 3, overflowY: "auto", flexShrink: 0 }}>
           {TOOLS.map(tool => (
             <button key={tool.id} onClick={() => setActive(tool.id)} style={{
-              padding: "12px 10px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left",
+              padding: "10px 10px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left",
               background: active === tool.id ? "linear-gradient(135deg, #E8F4F2, #D4EDE9)" : "transparent",
               borderLeft: active === tool.id ? "3px solid #4E8B80" : "3px solid transparent",
               transition: "all 0.2s",
             }}>
-              <div style={{ fontSize: 18 }}>{tool.icon}</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: active === tool.id ? "#2D5A54" : "#444", marginTop: 2 }}>{tool.label}</div>
-              <div style={{ fontSize: 11, color: "#999", marginTop: 2, lineHeight: 1.3 }}>{tool.desc}</div>
+              <div style={{ fontSize: 16 }}>{tool.icon}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: active === tool.id ? "#2D5A54" : "#444", marginTop: 2 }}>{tool.label}</div>
+              <div style={{ fontSize: 11, color: "#999", marginTop: 1, lineHeight: 1.3 }}>{tool.desc}</div>
             </button>
           ))}
         </div>
 
         {/* Main content */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "14px 24px", borderBottom: "1px solid #E8E0D0", background: "#FFFDF9", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 22 }}>{activeTool?.icon}</span>
+          <div style={{ padding: "12px 24px", borderBottom: "1px solid #E8E0D0", background: "#FFFDF9", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>{activeTool?.icon}</span>
             <div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: "#2D3B36" }}>{activeTool?.label}</div>
-              <div style={{ fontSize: 13, color: "#888" }}>{activeTool?.desc}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#2D3B36" }}>{activeTool?.label}</div>
+              <div style={{ fontSize: 12, color: "#888" }}>{activeTool?.desc}</div>
             </div>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>

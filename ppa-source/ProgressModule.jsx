@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ppaBackupIsStale, BackupRestorePanel } from "./ExportImportSystem.jsx";
 import { AdminPinEntry } from "./AdminPinEntry.jsx";
 import { CallAPI, ThinkingDots } from "./shared.jsx";
+import { bktAllTrajectories, BKT_PARAMS, CONDITION_PROFILES, DEFAULT_CONDITION } from "./lib/bkt.js";
 
 // ── Progress persistence helpers ─────────────────────────────────────────────
 export const PROGRESS_SETTINGS_KEY = "ppa_progress_settings";
@@ -115,7 +116,56 @@ Write a structured clinical progress report with these sections:
 Tone: professional and clinical yet readable by family/caregivers. Use plain English. Be compassionate.`;
 }
 
-export default function ProgressModule({ sessionLog }) {
+// ── BKT knowledge panel ──────────────────────────────────────────────────────
+function BktPanel({ bkt, bktSnapshots, conditionType }) {
+  if (!bkt) return null;
+  const ct = conditionType || DEFAULT_CONDITION;
+  const trajectories = bktAllTrajectories(bktSnapshots || {}, ct);
+  const conditionLabel = CONDITION_PROFILES[ct]?.label ?? ct;
+
+  const trendIcon = (t) => t === "improving" ? "↑" : t === "declining" ? "↓" : t === "stable" ? "→" : "•";
+  const trendCol  = (t, alert) => alert ? "#8B2D2D" : t === "improving" ? "#2D6B3A" : t === "declining" ? "#8B5A2D" : "#555";
+
+  return (
+    <div style={{ background: "#FFFDF9", borderRadius: 16, padding: "18px 20px", border: "1px solid #E8E0D0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#2D3B36" }}>🧠 Knowledge Levels (BKT v2)</div>
+          <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{conditionLabel}</div>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {Object.entries(BKT_PARAMS).map(([skill]) => {
+          const k = bkt[skill] ?? BKT_PARAMS[skill].p_known0;
+          const traj = trajectories[skill];
+          const pct = Math.round(k * 100);
+          const barColor = k >= 0.70 ? "#2D6B3A" : k >= 0.45 ? "#4E8B80" : k >= 0.25 ? "#D4A843" : "#B04040";
+          const td = traj?.trend ?? "insufficient_data";
+          const alert = traj?.alertFlag ?? false;
+          return (
+            <div key={skill}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#2D3B36" }}>{skill}</span>
+                <span style={{ fontSize: 13, color: trendCol(td, alert), fontWeight: 700 }}>
+                  {pct}% {trendIcon(td)}
+                  {alert && " ⚠️"}
+                </span>
+              </div>
+              <div style={{ height: 8, background: "#E8E0D0", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ height: "100%", background: barColor, borderRadius: 4, width: `${pct}%`, transition: "width 0.4s" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 12, fontSize: 11, color: "#999", lineHeight: 1.5 }}>
+        ↑ improving &nbsp;→ stable &nbsp;↓ declining &nbsp;⚠️ alert — knowledge updating live based on your activity.
+      </div>
+    </div>
+  );
+}
+
+export default function ProgressModule({ sessionLog, bkt, bktSnapshots, conditionType }) {
   const TODAY = new Date().toISOString().slice(0, 10);
 
   const loadSettings = () => {
@@ -450,6 +500,9 @@ export default function ProgressModule({ sessionLog }) {
         </button>
       </div>
 
+      {/* BKT knowledge panel */}
+      <BktPanel bkt={bkt} bktSnapshots={bktSnapshots} conditionType={conditionType} />
+
       {/* Today's activity */}
       <div style={{ ...card }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: "#2D3B36", marginBottom: 12 }}>Today — {TODAY}</div>
@@ -530,9 +583,9 @@ export default function ProgressModule({ sessionLog }) {
         )}
       </div>
 
-      {/* PPA tips */}
+      {/* Communication tips */}
       <div style={{ background: "#FFF8E8", borderRadius: 14, padding: "14px 18px", border: "1px solid #F0E0A0" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#7A5A10", marginBottom: 6 }}>💡 PPA Communication Tips</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#7A5A10", marginBottom: 6 }}>💡 Communication Tips</div>
         {["Reduce background noise during conversation.", "Use written words alongside speech.", "Give extra time — never rush responses.", "Gestures and pointing are valid communication.", "Fatigue is real — keep sessions short (20–30 min).", "Emotional content is often better preserved."].map((tip, i, a) => (
           <div key={i} style={{ fontSize: 13, color: "#5A4A1A", padding: "4px 0", borderBottom: i < a.length - 1 ? "1px solid #F0E0A0" : "none", display: "flex", gap: 8 }}>
             <span>•</span><span>{tip}</span>
