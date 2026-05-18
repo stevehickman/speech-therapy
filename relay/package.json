@@ -1,0 +1,13 @@
+{
+  "name": "@familiar/relay",
+  "version": "1.0.0",
+  "description": "Familiar zero-knowledge pub/sub relay server",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --experimental-sqlite src/server.js",
+    "test": "node --experimental-sqlite --test --test-reporter=spec test/relay.test.js",
+    "dev": "node --experimental-sqlite --watch src/server.js"
+  },
+  "engines": { "node": ">=22.0.0" }
+}
