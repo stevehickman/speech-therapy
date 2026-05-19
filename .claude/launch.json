@@ -5,8 +5,7 @@
       "name": "PPA Speech Therapy",
       "runtimeExecutable": "/Users/stevehickman/.nvm/versions/node/v24.14.0/bin/node",
       "runtimeArgs": ["/Users/stevehickman/Documents/GitHub/speech-therapy/node_modules/.bin/vite"],
-      "port": 5175,
-      "autoPort": true
+      "port": 5178
     },
     {
       "name": "PPA Speech Therapy PWA",

@@ -11,7 +11,10 @@ import {
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
 import { AdminPinEntry, CaregiverPinEntry, ChangeCaregiverPinForm } from "./AdminPinEntry.jsx";
-import { CallAPI, ThinkingDots } from "./shared.jsx";
+import { CallAPI, ThinkingDots, fetchAnthropicApi } from "./shared.jsx";
+import { AdaptiveChoiceQuestion } from "./AdaptiveChoiceQuestion.jsx";
+import { aqNeedsTagging, aqSaveDistractorTags } from "./data/adaptiveQuiz.js";
+import { CLAUDE_MODEL } from "./data/config.js";
 
 // localStorage key for personal video clip metadata
 const PERSONAL_VIDEOS_KEY = "ppa_personal_videos";
@@ -157,11 +160,17 @@ function ImportPanel({ onSave, onCancel }) {
 
 Create exactly 3 questions — one WHO, one WHAT, one WHERE. Each must have exactly 4 short answer options (under 6 words each), one correct answer, and a one-sentence hint.
 
+For each wrong option, also provide a distractor_difficulty value:
+  0 = very distinct (clearly unrelated to correct answer)
+  1 = plausible (same category, could be confused)
+  2 = confusable (highly similar, easy to mix up)
+Use null for the correct answer's distractor_difficulty.
+
 Respond ONLY with valid JSON, no markdown, no extra text:
 {
-  "who": { "question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "hint": "..." },
-  "what": { "question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "hint": "..." },
-  "where": { "question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "hint": "..." }
+  "who": { "question": "...", "options": ["...", "...", "...", "..."], "answer": 0, "hint": "...", "distractor_difficulty": [null, 1, 0, 2] },
+  "what": { "question": "...", "options": ["...", "...", "...", "..."], "answer": 1, "hint": "...", "distractor_difficulty": [0, null, 1, 2] },
+  "where": { "question": "...", "options": ["...", "...", "...", "..."], "answer": 2, "hint": "...", "distractor_difficulty": [1, 0, null, 2] }
 }`
     }]);
   };
@@ -205,6 +214,8 @@ Respond ONLY with valid JSON, no markdown, no extra text:
               setQuestions(Q_TYPES.map(qt => ({
                 ...makeBlankQuestion(qt.type, qt.icon, qt.color),
                 ...(data[qt.type] || {}),
+                // preserve distractor_difficulty so VideoModule can save it as tags
+                distractor_difficulty: data[qt.type]?.distractor_difficulty ?? null,
               })));
             } catch (e) { /* ignore parse errors */ }
             setGeneratingAI(false);
@@ -545,7 +556,7 @@ function PersonalVideosLibraryPanel({ clips, fileUrls, onUpdate, onSaveClip, onD
 }
 
 // ---- VIDEO MODULE ----
-export default function VideoModule({ addToLog }) {
+export default function VideoModule({ addToLog, conditionType = "primary_progressive" }) {
   // ── mode ─────────────────────────────────────────────────────────────────────
   const [videoMode, setVideoMode] = useState("standard"); // "standard" | "personal"
   const [personalPanelOpen, setPersonalPanelOpen] = useState(false);
@@ -653,14 +664,17 @@ export default function VideoModule({ addToLog }) {
   const [clipIdx, setClipIdx] = useState(0);
   const [phase, setPhase] = useState("watch");
   const [qIdx, setQIdx] = useState(0);
+  // answers[i] = { qIdx, correct, hintLevel }
   const [answers, setAnswers] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [confirmed, setConfirmed] = useState(false);
+  // set to result object once AdaptiveChoiceQuestion fires onComplete
+  const [questionResult, setQuestionResult] = useState(null);
   const [aiComment, setAiComment] = useState("");
   const [loadingAI, setLoadingAI] = useState(false);
   const [pendingAI, setPendingAI] = useState(null);
   const [videoError, setVideoError] = useState(false);
   const [scores, setScores] = useState({});
+  // key changes each time a new question is shown, forcing AdaptiveChoiceQuestion to remount
+  const [questionKey, setQuestionKey] = useState(0);
   const iframeRef = useRef(null);
   const dropdownRef = useRef(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -737,8 +751,9 @@ export default function VideoModule({ addToLog }) {
     : null;
 
   const resetClipState = () => {
-    setPhase("watch"); setQIdx(0); setAnswers([]); setSelected(null);
-    setConfirmed(false); setAiComment(""); setPendingAI(null); setVideoError(false);
+    setPhase("watch"); setQIdx(0); setAnswers([]);
+    setQuestionResult(null); setQuestionKey(k => k + 1);
+    setAiComment(""); setPendingAI(null); setVideoError(false);
   };
 
   useEffect(() => {
@@ -762,17 +777,17 @@ export default function VideoModule({ addToLog }) {
     };
   }, [dropdownOpen]);
 
-  const confirmAnswer = () => {
-    if (selected === null) return;
-    const correct = selected === question.answer;
-    const newAnswers = [...answers, { qIdx, selected, correct }];
+  // Called by AdaptiveChoiceQuestion when a question is resolved (correct or gave up).
+  const handleQuestionComplete = ({ correct, hintLevel }) => {
+    const newAnswers = [...answers, { qIdx, correct, hintLevel }];
     setAnswers(newAnswers);
-    setConfirmed(true);
+    setQuestionResult({ correct, hintLevel });
+
     if (qIdx >= clip.questions.length - 1) {
       const score = newAnswers.filter(a => a.correct).length;
       setScores(s => ({ ...s, [clip.id]: score }));
       addToLog && addToLog({ type: "video", item: clip.title, result: `${score}/${clip.questions.length}`, time: new Date().toLocaleTimeString() });
-      const promptText = `The patient just watched a video titled "${clip.title}" and answered ${clip.questions.length} comprehension questions, getting ${score} correct.\n\nQuestions and answers:\n${clip.questions.map((q, i) => `Q${i+1} (${q.type}): "${q.question}"\nPatient chose: "${q.options[newAnswers[i]?.selected ?? -1] || "no answer"}" — ${newAnswers[i]?.correct ? "CORRECT" : `WRONG (correct: "${q.options[q.answer]}")`}`).join("\n\n")}\n\nProvide a brief, warm, encouraging comment (3-4 sentences) about their performance. Note what they did well and what to keep practising.`;
+      const promptText = `The patient just watched a video titled "${clip.title}" and answered ${clip.questions.length} comprehension questions, getting ${score} correct.\n\nQuestions and answers:\n${clip.questions.map((q, i) => `Q${i+1} (${q.type}): "${q.question}" — ${newAnswers[i]?.correct ? "CORRECT" : `WRONG (correct: "${q.options[q.answer]}")`}${(newAnswers[i]?.hintLevel ?? 0) > 0 ? ` (needed ${newAnswers[i].hintLevel} hint${newAnswers[i].hintLevel > 1 ? "s" : ""})` : ""}`).join("\n\n")}\n\nProvide a brief, warm, encouraging comment (3-4 sentences) about their performance. Note what they did well and what to keep practising.`;
       setPendingAI([{ role: "user", content: promptText }]);
       setLoadingAI(true);
       setTimeout(() => setPhase("result"), 900);
@@ -781,9 +796,52 @@ export default function VideoModule({ addToLog }) {
 
   const nextQuestion = () => {
     if (qIdx < clip.questions.length - 1) {
-      setQIdx(q => q + 1); setSelected(null); setConfirmed(false);
+      setQIdx(q => q + 1);
+      setQuestionResult(null);
+      setQuestionKey(k => k + 1);
     }
   };
+
+  // Auto-tag distractor difficulty for all clips that haven't been tagged yet.
+  // Runs once in the background after the clips are available.
+  useEffect(() => {
+    const untagged = [...VIDEO_CLIPS, ...customClips].filter(c => aqNeedsTagging(c.id));
+    if (untagged.length === 0) return;
+    let cancelled = false;
+
+    (async () => {
+      for (const c of untagged) {
+        if (cancelled) break;
+        try {
+          const prompt = `For each multiple-choice question below, classify each WRONG answer option by how easily distinguishable it is from the correct answer:
+0 = Very distinct (clearly wrong category, obviously unrelated to the correct answer)
+1 = Plausible (same broad category, could be confused)
+2 = Confusable (highly similar, easy to mix up with the correct answer)
+
+Use null for the correct answer option.
+
+Clip: "${c.title}"
+Questions:
+${c.questions.map((q, qi) => `Q${qi}: "${q.question}" — options: ${q.options.map((o, oi) => `[${oi}]="${o}"${oi === q.answer ? "(CORRECT)" : ""}`).join(", ")}`).join("\n")}
+
+Respond ONLY with valid JSON — an array of arrays, one inner array per question, one value per option:
+[[0,null,1,2], [null,0,2,1], ...]`;
+
+          const data = await fetchAnthropicApi({
+            model: CLAUDE_MODEL,
+            max_tokens: 512,
+            messages: [{ role: "user", content: prompt }],
+          });
+          if (cancelled) break;
+          const raw = data.content?.map(b => b.text || "").join("").trim() ?? "";
+          const tags = JSON.parse(raw.replace(/```json|```/g, "").trim());
+          if (Array.isArray(tags)) aqSaveDistractorTags(c.id, tags);
+        } catch { /* tagging is best-effort; silently skip on error */ }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nextClip = () => {
     const next = (clipIdx + 1) % Math.max(activeClips.length, 1);
@@ -795,6 +853,13 @@ export default function VideoModule({ addToLog }) {
     const next = [...customClips, newClip];
     const fileEntries = newClip.fileUrl ? [{ id: newClip.id, fileUrl: newClip.fileUrl }] : [];
     saveCustomClips(next, fileEntries);
+
+    // If AI generated distractor_difficulty tags, save them now that we have the clip ID
+    const questionTags = newClip.questions?.map(q => q.distractor_difficulty ?? null);
+    if (questionTags?.some(t => t !== null)) {
+      aqSaveDistractorTags(newClip.id, questionTags);
+    }
+
     setClipIdx(VIDEO_CLIPS.length + next.length - 1);
     setShowAddPanel(false);
     resetClipState();
@@ -1241,9 +1306,12 @@ export default function VideoModule({ addToLog }) {
       {/* QUESTIONS phase */}
       {phase === "questions" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Progress bar */}
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {clip.questions.map((q, i) => (
-              <div key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: i < qIdx ? "#4E8B80" : i === qIdx ? "#D4A843" : "#E8E0D0", transition: "background 0.3s" }} />
+              <div key={i} style={{ flex: 1, height: 6, borderRadius: 3,
+                background: i < qIdx ? "#4E8B80" : i === qIdx ? "#D4A843" : "#E8E0D0",
+                transition: "background 0.3s" }} />
             ))}
             <span style={{ fontSize: 13, color: "#888", whiteSpace: "nowrap", marginLeft: 4 }}>
               {qIdx + 1} / {clip.questions.length}
@@ -1251,62 +1319,38 @@ export default function VideoModule({ addToLog }) {
           </div>
 
           <div style={{ background: "#FFFDF9", borderRadius: 20, padding: 28, border: "1px solid #E8E0D0", boxShadow: "0 4px 20px rgba(0,0,0,0.06)" }}>
+            {/* Question type badge */}
             <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 20, background: qTypeColors[question.type] + "18", border: `2px solid ${qTypeColors[question.type]}40`, marginBottom: 18 }}>
               <span style={{ fontSize: 18 }}>{question.icon}</span>
               <span style={{ fontSize: 13, fontWeight: 800, color: qTypeColors[question.type], letterSpacing: 2 }}>{qTypeLabels[question.type]}</span>
             </div>
 
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#2D3B36", marginBottom: 24, lineHeight: 1.4 }}>
+            {/* Question text */}
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#2D3B36", marginBottom: 20, lineHeight: 1.4 }}>
               {question.question}
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {question.options.map((opt, i) => {
-                let bg = "#F5F0E8", border = "#D5CFC4", color = "#2D3B36";
-                if (selected === i && !confirmed) { bg = "#E8F4F2"; border = "#4E8B80"; color = "#2D5A54"; }
-                if (confirmed) {
-                  if (i === question.answer) { bg = "#E8F4F2"; border = "#4E8B80"; color = "#2D5A54"; }
-                  else if (i === selected && selected !== question.answer) { bg = "#FDE8E8"; border = "#C07070"; color = "#7A2020"; }
-                  else { bg = "#F5F0E8"; border = "#D5CFC4"; color = "#aaa"; }
-                }
-                return (
-                  <button key={i} onClick={() => !confirmed && setSelected(i)}
-                    style={{ padding: "14px 20px", borderRadius: 14, border: `2px solid ${border}`, background: bg, color, fontSize: 16, textAlign: "left", cursor: confirmed ? "default" : "pointer", fontFamily: "inherit", fontWeight: selected === i || (confirmed && i === question.answer) ? 700 : 400, transition: "all 0.2s", display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ width: 28, height: 28, borderRadius: "50%", background: border + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: border, flexShrink: 0 }}>
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    {opt}
-                    {confirmed && i === question.answer && <span style={{ marginLeft: "auto", fontSize: 18 }}>✓</span>}
-                    {confirmed && i === selected && selected !== question.answer && <span style={{ marginLeft: "auto", fontSize: 18 }}>✗</span>}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Adaptive choice component — remounts on each new question via key */}
+            <AdaptiveChoiceQuestion
+              key={questionKey}
+              question={question}
+              factKey={`video::${clip.id}::${qIdx}`}
+              category={question.type}
+              conditionType={conditionType}
+              clipId={clip.id}
+              questionIdx={qIdx}
+              onComplete={handleQuestionComplete}
+            />
 
-            {!confirmed && selected === null && (
-              <div style={{ marginTop: 16, fontSize: 14, color: "#999", fontStyle: "italic" }}>
-                💡 Hint: {question.hint}
+            {/* Next question / see results — shown after question is resolved */}
+            {questionResult && qIdx < clip.questions.length - 1 && (
+              <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={nextQuestion}
+                  style={{ padding: "12px 28px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 12, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>
+                  Next Question →
+                </button>
               </div>
             )}
-
-            <div style={{ marginTop: 20, display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              {!confirmed ? (
-                <button onClick={confirmAnswer} disabled={selected === null}
-                  style={{ padding: "12px 28px", background: selected !== null ? "linear-gradient(135deg, #4E8B80, #3A7A6F)" : "#C5BEB4", color: "#fff", border: "none", borderRadius: 12, cursor: selected !== null ? "pointer" : "default", fontSize: 16, fontWeight: 700 }}>
-                  Confirm Answer
-                </button>
-              ) : (
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <div style={{ fontSize: 15, color: selected === question.answer ? "#4E8B80" : "#C07070", fontWeight: 700 }}>
-                    {selected === question.answer ? "✓ Correct!" : `✗ The answer was: "${question.options[question.answer]}"`}
-                  </div>
-                  <button onClick={nextQuestion}
-                    style={{ padding: "12px 28px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 12, cursor: "pointer", fontSize: 16, fontWeight: 700, display: qIdx >= clip.questions.length - 1 ? "none" : "block" }}>
-                    {"Next Question →"}
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
 
           <button onClick={() => setPhase("watch")} style={{ alignSelf: "flex-start", fontSize: 13, color: "#888", background: "none", border: "none", cursor: "pointer" }}>
@@ -1338,7 +1382,14 @@ export default function VideoModule({ addToLog }) {
                       <div style={{ fontSize: 13, fontWeight: 700, color: a?.correct ? "#4E8B80" : "#C07070", textTransform: "uppercase", letterSpacing: 1 }}>{q.type} {a?.correct ? "✓" : "✗"}</div>
                       <div style={{ fontSize: 14, color: "#444", marginTop: 2 }}>{q.question}</div>
                       <div style={{ fontSize: 14, color: "#2D3B36", fontWeight: 600, marginTop: 4 }}>
-                        {a?.correct ? `Your answer: "${q.options[a.selected]}"` : <>Your answer: <span style={{ color: "#C07070" }}>"{q.options[a?.selected]}"</span> → Correct: <span style={{ color: "#4E8B80" }}>"{q.options[q.answer]}"</span></>}
+                        {a?.correct
+                          ? "Correct!"
+                          : <>Correct answer: <span style={{ color: "#4E8B80" }}>"{q.options[q.answer]}"</span></>}
+                        {(a?.hintLevel ?? 0) > 0 && (
+                          <span style={{ color: "#9B7FB8", fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
+                            ({a.hintLevel} hint{a.hintLevel > 1 ? "s" : ""} used)
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1355,7 +1406,7 @@ export default function VideoModule({ addToLog }) {
           )}
 
           <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-            <button onClick={() => { setPhase("watch"); setQIdx(0); setAnswers([]); setSelected(null); setConfirmed(false); setAiComment(""); setPendingAI(null); }}
+            <button onClick={() => { setPhase("watch"); setQIdx(0); setAnswers([]); setQuestionResult(null); setQuestionKey(k => k + 1); setAiComment(""); setPendingAI(null); }}
               style={{ padding: "12px 24px", background: "#F5F0E8", color: "#2D3B36", border: "2px solid #D5CFC4", borderRadius: 12, cursor: "pointer", fontSize: 15, fontWeight: 600 }}>
               🔄 Try Again
             </button>
