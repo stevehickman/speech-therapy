@@ -1,7 +1,9 @@
 import { useState } from "react";
 
 // ── Clinician / Admin PIN ──────────────────────────────────────────────────────
-// Guards clinical data: naming word lists, exercise configs, export/import.
+// FOR THE CLINICIAN APP ONLY — not used anywhere in the client (patient) app.
+// The client app uses CaregiverPinEntry (below) for all content-management gates.
+// Guards clinical data in the clinician app: word lists, exercise configs, export/import.
 export const ADMIN_PIN = "1234";
 
 export function AdminPinEntry({ onSuccess, onCancel }) {

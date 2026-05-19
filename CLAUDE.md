@@ -167,58 +167,61 @@ Personal clip metadata is stored in `ppa_personal_videos` (localStorage). Binary
 
 ## Role Model
 
-The app recognises three distinct actors with different access levels:
+Three actors interact with the therapy ecosystem. The **client app** (this codebase) serves the patient and caregiver only. The clinician uses a separate app.
 
-| Actor | Who | What they can do in the app | Access gate |
+| Actor | App | What they can do | Access gate in client app |
 |---|---|---|---|
-| **Patient** | The person receiving therapy | Practices all exercises; no content management | None — open access |
-| **Caregiver** | Family member or carer | Adds personal photos and personal video clips; changes caregiver PIN | Caregiver PIN (stored in `ppa_caregiver_pin`, default `"0000"`) |
-| **Clinician** | Therapist / SLP | Full admin: clinical word lists, exercise configs, `.ppa` export/import | Clinician PIN (`ADMIN_PIN = "1234"` in `AdminPinEntry.jsx` — change before deployment) |
+| **Patient** | Client app | Practices all exercises; no content management | None — open access |
+| **Caregiver** | Client app | Adds personal photos and personal video clips; manages all clinical content panels; changes caregiver PIN | Caregiver PIN (stored in `ppa_caregiver_pin`, default `"0000"`) |
+| **Clinician** | Clinician app (separate codebase) | Authors word lists, video clip sets, exercise configs; subscribes to patient results | Clinician PIN lives in the clinician app — **never in this codebase** |
 
 ### PIN components (`AdminPinEntry.jsx`)
 
 | Export | Purpose |
 |---|---|
-| `ADMIN_PIN` | Clinician PIN constant |
-| `AdminPinEntry` | Clinician gate component (teal-themed) |
+| `ADMIN_PIN` / `AdminPinEntry` | **Clinician app only** — not imported by any client-app module |
 | `CAREGIVER_PIN_KEY` | localStorage key for caregiver PIN |
 | `DEFAULT_CAREGIVER_PIN` | `"0000"` |
 | `getCaregiverPin()` / `setCaregiverPin(pin)` | Read/write caregiver PIN |
 | `CaregiverPinEntry` | Caregiver gate component (purple-themed, shows default-PIN warning) |
 | `ChangeCaregiverPinForm` | Inline form for changing caregiver PIN; embed in any caregiver panel header |
 
-### Caregiver-gated areas
+### Caregiver-gated areas (all content management in the client app)
 
 - **Personal Photos library** (`PersonalLibraryPanel` in `NamingModule.jsx`) — `🔑 PIN` button in header opens `ChangeCaregiverPinForm`
 - **Personal Video Clips library** (`PersonalVideosLibraryPanel` in `VideoModule.jsx`) — same pattern
-
-### Clinician-gated areas
-
-- **Naming Admin panel** — word list, bulk import, generate by category, export/import `.ppa`
-- **Video Questions Admin** — built-in clip questions, custom clip management, export/import `.ppa`
+- **Naming Admin panel** — standard word list, bulk import, generate by category, export/import `.ppa`
+- **Video Clips Admin** — built-in clip questions, custom clip management, export/import `.ppa`
 
 ---
 
-## Clinician Transfer Architecture (design — not yet built)
+## Clinician–Client Architecture (design — not yet built)
 
-The intended flow for distributing clinician-authored content to patient devices:
+The clinician and client apps form a **subscription-based, bidirectional sync** over an optional lightweight backend. The client app is fully standalone without the backend — it simply won't receive clinician-authored content or send results upstream.
 
 ```
-Clinician App (separate Vite build)
-  └─ Authors word lists, video clip sets, exercise configs
-  └─ Exports a signed .ppaclinician bundle
-        ↓  (QR code, AirDrop, or shared link)
-Patient App (this app)
-  └─ "Import from clinician" flow reads the bundle
-  └─ Merges items into ppa_naming_items / ppa_video_clips
-  └─ Records _sourceFile so items can be re-exported cleanly
+Clinician App (separate Vite build / codebase)
+  ├─ Authors word lists, video clip sets, exercise configs
+  ├─ Manages a roster of subscribed client apps
+  └─ Publishes content bundles to each client's endpoint
+           ↓  content (clinician → client)
+  [Optional lightweight backend — relay only, no storage]
+           ↑  results (client → clinician)
+Client App (this codebase)
+  ├─ Subscribes once via a clinician-generated code/URL
+  ├─ Receives and validates incoming content bundles
+  ├─ Merges items into ppa_naming_items / ppa_video_clips
+  └─ Sends practice results back via the same channel
 ```
 
 Key design constraints:
-- **No backend / no accounts.** Transfer is always a file (`.ppaclinician` JSON, possibly zipped).
-- **Signing / trust.** The clinician app stamps bundles with a shared secret or simple checksum so the patient app can verify authenticity before merging.
-- **Merge semantics.** Same de-duplication logic as existing `.ppa` imports — same-`id` items update in place; new items are appended; patient-side custom items are untouched.
-- **Caregiver-vs-clinician content.** Items sourced from a clinician bundle carry `_sourceType: "clinician"` so the admin panel can show their provenance and offer selective re-export back to the clinician.
+
+- **Client runs standalone.** No backend required. Without a subscription the app works exactly as it does today — all content is caregiver-supplied or built-in.
+- **Subscription via one-time code/URL.** The clinician generates a code in the clinician app; the caregiver enters it in the client app once to register the subscription endpoint.
+- **Bidirectional transport.** Content flows clinician → client; anonymised practice results flow client → clinician via the same relay. Personal caregiver-added content never leaves the device.
+- **Merge semantics.** Same de-duplication logic as existing `.ppa` imports — same-`id` items update in place; new items appended; caregiver-side custom items are untouched and invisible to the clinician.
+- **Content provenance.** Items sourced from a clinician bundle carry `_sourceType: "clinician"` so the caregiver panel can show their origin and the client can re-send updated results correctly.
+- **No clinician PIN in the client app.** All content-management gates in the client app use the caregiver PIN. `ADMIN_PIN` and `AdminPinEntry` exist only in `AdminPinEntry.jsx` for use by the clinician app and must not be imported by any client-app module.
 
 ---
 
@@ -227,6 +230,6 @@ Key design constraints:
 - **No backend.** All persistence is `localStorage`. Keys are prefixed `ppa_`. Notable keys: `ppa_naming_items` (standard naming list), `ppa_naming_sr` (standard SR state), `ppa_personal_items` (personal photo items), `ppa_personal_sr` (personal SR state), `ppa_personal_videos` (personal video clip metadata), `ppa_video_clips` (custom standard video clips), `ppa_caregiver_pin` (caregiver PIN), `ppa_dictionary` (shared graphic store).
 - **Shared code belongs in `shared.jsx`.** Any utility used by more than one module goes there.
 - **Exported constants, not magic strings.** localStorage keys, file extensions, and result type strings are defined once and imported where needed.
-- **Admin PIN** is `"1234"` (defined in `NamingModule.jsx` — change before deployment).
+- **Clinician PIN** (`ADMIN_PIN = "1234"` in `AdminPinEntry.jsx`) is for the **clinician app only** — not used in the client app. All content-management gates in the client app use the **caregiver PIN** (`CaregiverPinEntry`, stored in `ppa_caregiver_pin`).
 - **`VITE_ANTHROPIC_API_KEY`** must be in `.env` — never hardcoded.
 - **React StrictMode is active** in development (`src/main.jsx`). Effects run twice; always use cleanup functions.

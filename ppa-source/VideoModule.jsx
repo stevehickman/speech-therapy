@@ -950,12 +950,12 @@ export default function VideoModule({ addToLog }) {
         )}
 
         {!pinPassed ? (
-          <AdminPinEntry onSuccess={() => setPinPassed(true)} onCancel={closeAdmin} />
+          <CaregiverPinEntry onSuccess={() => setPinPassed(true)} onCancel={closeAdmin} />
         ) : (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#2D3B36", borderRadius: 14, padding: "14px 20px" }}>
               <span style={{ fontSize: 20 }}>{"⚙️"}</span>
-              <span style={{ fontSize: 16, fontWeight: 700, color: "#E8F4F2", flex: 1 }}>Video Questions Admin</span>
+              <span style={{ fontSize: 16, fontWeight: 700, color: "#E8F4F2", flex: 1 }}>Video Clips — Caregiver</span>
               <PpaAdminToolbar onExport={() => setShowVmExport(true)} onImport={handleVmImport} />
               <button onClick={closeAdmin} style={{ padding: "6px 14px", borderRadius: 10, border: "1px solid #4E8B80", background: "transparent", color: "#7BAE9F", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>✕ Close</button>
             </div>

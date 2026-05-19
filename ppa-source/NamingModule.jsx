@@ -18,8 +18,6 @@ import enVoice from "mespeak/voices/en/en-us.json";
 if (!meSpeak.isConfigLoaded()) meSpeak.loadConfig(meSpeakConfig);
 if (!meSpeak.isVoiceLoaded())  meSpeak.loadVoice(enVoice);
 
-const ADMIN_PIN   = "1234"; // change this to set a different PIN
-
 // Load / save delegate entirely to the Dictionary module.
 // ppa_naming_items is still written by dictSaveNamingItems for SR engine compat.
 function loadItems()      { return dictLoadNamingItems(); }
@@ -1326,49 +1324,6 @@ function AdminPanel({ items, onUpdate, onClose }) {
   );
 }
 
-// ── PIN gate ───────────────────────────────────────────────────────────────────
-function PinGate({ onUnlock }) {
-  const [pin, setPin] = useState("");
-  const [error, setError] = useState(false);
-  const inputRef = useRef(null);
-
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  const submit = () => {
-    if (pin === ADMIN_PIN) { onUnlock(); }
-    else { setError(true); setPin(""); setTimeout(() => setError(false), 1200); }
-  };
-
-  return (
-    <div style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-      <div style={{ fontSize: 40 }}>🔒</div>
-      <div style={{ fontSize: 17, fontWeight: 700, color: "#2D3B36" }}>Admin PIN required</div>
-      <input
-        ref={inputRef}
-        type="password"
-        inputMode="numeric"
-        maxLength={8}
-        value={pin}
-        onChange={e => setPin(e.target.value)}
-        onKeyDown={e => e.key === "Enter" && submit()}
-        placeholder="Enter PIN"
-        style={{ padding: "12px 20px", borderRadius: 12, border: `2px solid ${error ? "#C07070" : "#D5CFC4"}`,
-          fontSize: 20, textAlign: "center", width: 160, outline: "none",
-          animation: error ? "pinShake 0.3s ease" : "none",
-          background: error ? "#FFF5F5" : "#FFFDF9" }}
-      />
-      {error && <div style={{ color: "#C07070", fontSize: 14, fontWeight: 600 }}>Incorrect PIN</div>}
-      <button onClick={submit}
-        style={{ padding: "11px 28px", borderRadius: 12, border: "none",
-          background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff",
-          fontWeight: 700, cursor: "pointer", fontSize: 15 }}>
-        Unlock
-      </button>
-      <style>{`@keyframes pinShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}`}</style>
-    </div>
-  );
-}
-
 // ── Practice view ─────────────────────────────────────────────────────────────
 function Practice({ items, addToLog, srKey = SR_KEY }) {
   // ── SR state ────────────────────────────────────────────────────────────────
@@ -1911,22 +1866,22 @@ export default function NamingModule({ addToLog }) {
   const openAdmin  = () => { setPinPassed(false); setAdminOpen(true); };
   const closeAdmin = () => setAdminOpen(false);
 
-  // Standard admin panel (PIN-gated)
+  // Standard admin panel (caregiver PIN-gated)
   if (adminOpen) {
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
         {pinPassed
           ? <AdminPanel items={items} onUpdate={setItems} onClose={closeAdmin} />
-          : <PinGate onUnlock={() => setPinPassed(true)} />
+          : <>
+              <CaregiverPinEntry onSuccess={() => setPinPassed(true)} onCancel={closeAdmin} />
+              <div style={{ padding: "12px 20px", borderTop: "1px solid #E8E0D0" }}>
+                <button onClick={closeAdmin}
+                  style={{ color: "#888", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>
+                  ← Back to practice
+                </button>
+              </div>
+            </>
         }
-        {!pinPassed && (
-          <div style={{ padding: "12px 20px", borderTop: "1px solid #E8E0D0" }}>
-            <button onClick={closeAdmin}
-              style={{ color: "#888", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>
-              ← Back to practice
-            </button>
-          </div>
-        )}
       </div>
     );
   }
