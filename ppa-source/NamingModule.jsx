@@ -24,6 +24,13 @@ const ADMIN_PIN   = "1234"; // change this to set a different PIN
 function loadItems()      { return dictLoadNamingItems(); }
 function saveItems(items) { dictSaveNamingItems(items); }
 
+function loadPersonalItems() {
+  try { return JSON.parse(localStorage.getItem(PERSONAL_ITEMS_KEY) || "[]"); } catch { return []; }
+}
+function savePersonalItems(items) {
+  try { localStorage.setItem(PERSONAL_ITEMS_KEY, JSON.stringify(items)); } catch (_) {}
+}
+
 // ── PPA-Adapted Spaced Repetition ─────────────────────────────────────────────
 //
 // Standard SM-2 assumes the learner IMPROVES over time and uses intervals that
@@ -62,7 +69,9 @@ function saveItems(items) { dictSaveNamingItems(items); }
 // On first load the state is bootstrapped from all stored ppa_progress_* days
 // so returning users receive a sensible schedule immediately.
 
-const SR_KEY       = "ppa_naming_sr";
+const SR_KEY              = "ppa_naming_sr";
+const PERSONAL_SR_KEY     = "ppa_personal_sr";
+const PERSONAL_ITEMS_KEY  = "ppa_personal_items";
 const MAX_INTERVAL = 5;   // days — hard cap for PPA
 const TODAY        = () => new Date().toISOString().slice(0, 10);
 
@@ -81,12 +90,12 @@ const SR_FACTOR = {
 // Results that trigger within-session re-queuing
 const REQUEUE_RESULTS = new Set(["phonemic_cued", "failed"]);
 
-function srLoad() {
-  try { return JSON.parse(localStorage.getItem(SR_KEY) || "{}"); } catch { return {}; }
+function srLoad(key = SR_KEY) {
+  try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch { return {}; }
 }
 
-function srSave(state) {
-  try { localStorage.setItem(SR_KEY, JSON.stringify(state)); } catch (_) {}
+function srSave(state, key = SR_KEY) {
+  try { localStorage.setItem(key, JSON.stringify(state)); } catch (_) {}
 }
 
 // Apply PPA regression decay to a loaded SR state.
@@ -183,17 +192,17 @@ function srRebuildFromHistory() {
 }
 
 // Load SR state, apply PPA decay, and bootstrap from history if absent.
-function srLoadOrBootstrap() {
-  const raw = localStorage.getItem(SR_KEY);
+// For non-standard SR keys (e.g. personal photos), skip history bootstrap.
+function srLoadOrBootstrap(key = SR_KEY) {
+  const raw = localStorage.getItem(key);
   let state;
   if (raw) {
     try { state = JSON.parse(raw); } catch { state = {}; }
   } else {
-    state = srRebuildFromHistory();
+    state = key === SR_KEY ? srRebuildFromHistory() : {};
   }
   const decayed = srApplyDecay(state);
-  // Persist the decayed version so future loads don't re-apply
-  srSave(decayed);
+  srSave(decayed, key);
   return decayed;
 }
 
@@ -1360,18 +1369,18 @@ function PinGate({ onUnlock }) {
 }
 
 // ── Practice view ─────────────────────────────────────────────────────────────
-function Practice({ items, addToLog }) {
+function Practice({ items, addToLog, srKey = SR_KEY }) {
   // ── SR state ────────────────────────────────────────────────────────────────
-  const [srState,  setSrState]  = useState(() => srLoadOrBootstrap());
+  const [srState,  setSrState]  = useState(() => srLoadOrBootstrap(srKey));
   // queue: mutable array of item indices for this session.
   // We do NOT rebuild on every advance — that would erase within-session
   // re-inserts.  We rebuild only when items change (admin edit) or on wrap.
-  const [queue,    setQueue]    = useState(() => srQueue(items, srLoadOrBootstrap()));
+  const [queue,    setQueue]    = useState(() => srQueue(items, srLoadOrBootstrap(srKey)));
   const [queuePos, setQueuePos] = useState(0);
 
   // Rebuild queue whenever the items list changes (admin edits)
   useEffect(() => {
-    const fresh = srLoadOrBootstrap();
+    const fresh = srLoadOrBootstrap(srKey);
     setSrState(fresh);
     setQueue(srQueue(items, fresh));
     setQueuePos(0);
@@ -1412,7 +1421,7 @@ function Practice({ items, addToLog }) {
     // Update SR state
     const newSR = srRecord(srState, item.word, type);
     setSrState(newSR);
-    srSave(newSR);
+    srSave(newSR, srKey);
 
     // Within-session re-queue: if the result signals fragility and we haven't
     // already re-queued this word this session, insert it REQUEUE_GAP ahead.
@@ -1444,7 +1453,7 @@ function Practice({ items, addToLog }) {
     const nextPos = queuePos + 1;
     // When we've exhausted the queue, rebuild so newly-due items are picked up
     if (nextPos >= queue.length) {
-      const updated = srLoad();
+      const updated = srLoad(srKey);
       setSrState(updated);
       setQueue(srQueue(items, updated));
       setRequeuedWords(new Set()); // reset requeue guard for the next round
@@ -1687,18 +1696,188 @@ function PBtn({ color, onClick, children }) {
   );
 }
 
+// ── Personal Library Panel ─────────────────────────────────────────────────────
+// Family/patient-facing panel for managing personal photo items. No PIN required.
+function PersonalLibraryPanel({ items, onUpdate, onClose }) {
+  const [mode, setMode]         = useState("list"); // list | add | edit | bulkimport
+  const [editTarget, setEditTarget] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [dupWarning, setDupWarning] = useState(false);
+  const [formResetKey, setFormResetKey] = useState(0);
+  const showDup = () => { setDupWarning(true); setTimeout(() => { setDupWarning(false); setFormResetKey(k => k + 1); }, 300); };
+
+  const handleAdd = (newItem) => {
+    const NAMING_FIELDS = ["graphic", "category", "clue_semantic", "clue_phonemic"];
+    const result = checkDuplicate(items, newItem, it => it.word, NAMING_FIELDS);
+    if (result.action === "ignore") { showDup(); return; }
+    if (result.action === "update") {
+      onUpdate(items.map(it => it.id === result.match.id ? { ...result.merged, id: it.id } : it));
+      setMode("list"); return;
+    }
+    onUpdate([...items, { ...newItem, id: `personal-${Date.now()}` }]);
+    setMode("list");
+  };
+
+  const handleEdit = (updated) => {
+    onUpdate(items.map(it => it.id === editTarget.id ? { ...updated, id: editTarget.id } : it));
+    setMode("list");
+    setEditTarget(null);
+  };
+
+  const handleDelete = (id) => {
+    onUpdate(items.filter(it => it.id !== id));
+    setConfirmDelete(null);
+  };
+
+  const handleBulkSave = (validDrafts) => {
+    const newItems = validDrafts.map(d => ({
+      word: d.word.trim(),
+      category: d.category.trim().toLowerCase(),
+      graphic: d.graphic,
+      clue_semantic: d.clue_semantic.trim(),
+      clue_phonemic: d.clue_phonemic.trim(),
+      id: `personal-${Date.now()}-${Math.random()}`,
+    }));
+    const existingWords = new Set(items.map(it => it.word?.toLowerCase()));
+    const toAdd = newItems.filter(it => !existingWords.has(it.word.toLowerCase()));
+    onUpdate([...items, ...toAdd]);
+    setMode("list");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Header */}
+      <div style={{ padding: "14px 20px", borderBottom: "2px solid #E8E0D0", background: "#7A5AB8",
+        display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ fontSize: 20 }}>📸</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: "#fff", flex: 1 }}>My Photos Library</span>
+        <span style={{ fontSize: 13, color: "#D4C4F0" }}>{items.length} photo{items.length !== 1 ? "s" : ""}</span>
+        <button onClick={onClose}
+          style={{ padding: "6px 14px", borderRadius: 10, border: "1px solid #D4C4F080", background: "transparent",
+            color: "#D4C4F0", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+          ✕ Close
+        </button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+        {mode === "list" && (
+          <>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+              <button onClick={() => setMode("add")}
+                style={{ flex: "1 1 auto", padding: "11px 0", borderRadius: 12, border: "none",
+                  background: "linear-gradient(135deg, #7A5AB8, #5A2A80)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
+                + Add photo
+              </button>
+              <button onClick={() => setMode("bulkimport")}
+                style={{ flex: "1 1 auto", padding: "11px 0", borderRadius: 12, border: "2px solid #9B7FB8",
+                  background: "#F8F5FF", color: "#5A2A80", fontWeight: 700, cursor: "pointer", fontSize: 14 }}>
+                📁 Bulk import
+              </button>
+            </div>
+
+            {items.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 20px", color: "#999" }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>📷</div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#7A5AB8", marginBottom: 8 }}>No personal photos yet</div>
+                <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+                  Add photos of people, pets, and places that are meaningful to you.<br />
+                  Personal items can be especially helpful for word-finding practice.
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {items.map((item) => (
+                  <div key={item.id} style={{ background: "#FFFDF9", borderRadius: 14, border: "1px solid #E8E0D0",
+                    padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                    <div style={{ width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center",
+                      background: "#F5F0E8", borderRadius: 12, flexShrink: 0, overflow: "hidden" }}>
+                      <ZoomableGraphic graphic={item.graphic ?? item.emoji ?? "📷"} alt={item.word} width={44} height={44} fontSize={36} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 16, color: "#2D3B36" }}>{item.word}</div>
+                      <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>{item.category}</div>
+                      <div style={{ fontSize: 12, color: "#999", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        💡 {item.clue_semantic}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => { setEditTarget(item); setMode("edit"); }}
+                        style={{ padding: "7px 12px", borderRadius: 10, border: "2px solid #D5CFC4",
+                          background: "#FFFDF9", color: "#555", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                        ✏️ Edit
+                      </button>
+                      {confirmDelete === item.id ? (
+                        <>
+                          <button onClick={() => handleDelete(item.id)}
+                            style={{ padding: "7px 12px", borderRadius: 10, border: "none",
+                              background: "#C07070", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                            Delete
+                          </button>
+                          <button onClick={() => setConfirmDelete(null)}
+                            style={{ padding: "7px 10px", borderRadius: 10, border: "2px solid #D5CFC4",
+                              background: "#FFFDF9", color: "#666", cursor: "pointer", fontSize: 13 }}>
+                            ✕
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => setConfirmDelete(item.id)}
+                          style={{ padding: "7px 10px", borderRadius: 10, border: "2px solid #F0C0C0",
+                            background: "#FFF5F5", color: "#C07070", cursor: "pointer", fontSize: 13 }}>
+                          🗑
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {mode === "add" && (
+          <>
+            <h3 style={{ margin: "0 0 16px", color: "#2D3B36" }}>Add personal photo</h3>
+            <ItemForm key={formResetKey} onSave={handleAdd} onCancel={() => setMode("list")} dupWarning={dupWarning} />
+          </>
+        )}
+
+        {mode === "edit" && editTarget && (
+          <>
+            <h3 style={{ margin: "0 0 16px", color: "#2D3B36" }}>Edit: <em>{editTarget.word}</em></h3>
+            <ItemForm
+              key={formResetKey}
+              initial={{ ...editTarget, graphic: editTarget.graphic ?? editTarget.emoji }}
+              onSave={handleEdit}
+              onCancel={() => { setMode("list"); setEditTarget(null); }}
+              dupWarning={dupWarning}
+            />
+          </>
+        )}
+
+        {mode === "bulkimport" && (
+          <BulkImportPanel onSaveAll={handleBulkSave} onCancel={() => setMode("list")} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main export ────────────────────────────────────────────────────────────────
 export default function NamingModule({ addToLog }) {
-  const [items, setItems]     = useState(loadItems);
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [pinPassed, setPinPassed] = useState(false);
+  const [items, setItems]             = useState(loadItems);
+  const [adminOpen, setAdminOpen]     = useState(false);
+  const [pinPassed, setPinPassed]     = useState(false);
+  const [mode, setMode]               = useState("standard"); // "standard" | "personal"
+  const [personalItems, setPersonalItems] = useState(loadPersonalItems);
+  const [personalLibraryOpen, setPersonalLibraryOpen] = useState(false);
 
-  // Persist whenever items change
   useEffect(() => { saveItems(items); }, [items]);
+  useEffect(() => { savePersonalItems(personalItems); }, [personalItems]);
 
-  const openAdmin = () => { setPinPassed(false); setAdminOpen(true); };
+  const openAdmin  = () => { setPinPassed(false); setAdminOpen(true); };
   const closeAdmin = () => setAdminOpen(false);
 
+  // Standard admin panel (PIN-gated)
   if (adminOpen) {
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -1718,22 +1897,92 @@ export default function NamingModule({ addToLog }) {
     );
   }
 
-  return (
-    <div style={{ position: "relative", height: "100%" }}>
-      {/* Admin gear button */}
-      <button
-        onClick={openAdmin}
-        title="Admin: manage naming items"
-        style={{ position: "absolute", top: 16, right: 16, zIndex: 10,
-          width: 36, height: 36, borderRadius: "50%", border: "2px solid #D5CFC4",
-          background: "#FFFDF9", cursor: "pointer", fontSize: 16, display: "flex",
-          alignItems: "center", justifyContent: "center", color: "#888", transition: "all 0.2s" }}
-        onMouseOver={e => { e.currentTarget.style.borderColor = "#4E8B80"; e.currentTarget.style.color = "#4E8B80"; }}
-        onMouseOut={e => { e.currentTarget.style.borderColor = "#D5CFC4"; e.currentTarget.style.color = "#888"; }}>
-        {"⚙️"}
-      </button>
+  // Personal library panel (no PIN)
+  if (personalLibraryOpen) {
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <PersonalLibraryPanel
+          items={personalItems}
+          onUpdate={setPersonalItems}
+          onClose={() => setPersonalLibraryOpen(false)}
+        />
+      </div>
+    );
+  }
 
-      <Practice items={items} addToLog={addToLog} />
+  const isPersonal    = mode === "personal";
+  const practiceItems = isPersonal ? personalItems : items;
+  const practiceSrKey = isPersonal ? PERSONAL_SR_KEY : SR_KEY;
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {/* Mode tabs */}
+      <div style={{ display: "flex", borderBottom: "2px solid #E8E0D0", background: "#FFFDF9", flexShrink: 0 }}>
+        {[
+          { id: "standard", label: "📚 Standard" },
+          { id: "personal", label: "📸 My photos" },
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setMode(tab.id)}
+            style={{ flex: 1, padding: "11px 8px", border: "none",
+              borderBottom: mode === tab.id ? "3px solid #4E8B80" : "3px solid transparent",
+              background: mode === tab.id ? "#E8F4F2" : "transparent",
+              color: mode === tab.id ? "#2D5A54" : "#888",
+              fontWeight: mode === tab.id ? 700 : 500, cursor: "pointer", fontSize: 14,
+              transition: "all 0.15s" }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ flex: 1, position: "relative", overflow: "auto" }}>
+        {/* Action button: gear (standard admin) or pencil (personal library) */}
+        {!isPersonal ? (
+          <button onClick={openAdmin} title="Admin: manage naming items"
+            style={{ position: "absolute", top: 16, right: 16, zIndex: 10,
+              width: 36, height: 36, borderRadius: "50%", border: "2px solid #D5CFC4",
+              background: "#FFFDF9", cursor: "pointer", fontSize: 16, display: "flex",
+              alignItems: "center", justifyContent: "center", color: "#888", transition: "all 0.2s" }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = "#4E8B80"; e.currentTarget.style.color = "#4E8B80"; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = "#D5CFC4"; e.currentTarget.style.color = "#888"; }}>
+            {"⚙️"}
+          </button>
+        ) : (
+          <button onClick={() => setPersonalLibraryOpen(true)} title="Manage my photos"
+            style={{ position: "absolute", top: 16, right: 16, zIndex: 10,
+              width: 36, height: 36, borderRadius: "50%", border: "2px solid #D5CFC4",
+              background: "#FFFDF9", cursor: "pointer", fontSize: 16, display: "flex",
+              alignItems: "center", justifyContent: "center", color: "#888", transition: "all 0.2s" }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = "#7A5AB8"; e.currentTarget.style.color = "#7A5AB8"; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = "#D5CFC4"; e.currentTarget.style.color = "#888"; }}>
+            {"✏️"}
+          </button>
+        )}
+
+        {/* Empty state when no personal photos have been added yet */}
+        {isPersonal && personalItems.length === 0 ? (
+          <div style={{ padding: 32, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center" }}>
+            <div style={{ fontSize: 56 }}>📷</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#7A5AB8" }}>No personal photos yet</div>
+            <div style={{ fontSize: 15, color: "#666", lineHeight: 1.6, maxWidth: 340 }}>
+              Add photos of family members, pets, familiar places, and personal objects.<br />
+              Practising with meaningful personal images can help with word-finding.
+            </div>
+            <button onClick={() => setPersonalLibraryOpen(true)}
+              style={{ padding: "13px 28px", borderRadius: 14, border: "none",
+                background: "linear-gradient(135deg, #7A5AB8, #5A2A80)",
+                color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer" }}>
+              📸 Add my first photo
+            </button>
+          </div>
+        ) : (
+          <Practice
+            key={isPersonal ? "personal" : "standard"}
+            items={practiceItems}
+            addToLog={addToLog}
+            srKey={practiceSrKey}
+          />
+        )}
+      </div>
     </div>
   );
 }

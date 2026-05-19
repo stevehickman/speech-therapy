@@ -73,6 +73,27 @@ Animated three-dot spinner. Use during any AI loading state.
 
 ## Naming Module (`NamingModule.jsx`)
 
+### Modes
+
+The module has two practice modes toggled by tabs at the top of the view:
+
+| Mode | Tab | Items source | SR key | Admin access |
+|---|---|---|---|---|
+| **Standard** | 📚 Standard | `dictLoadNamingItems()` → `ppa_naming_items` | `ppa_naming_sr` | ⚙️ gear button — PIN-gated (`ADMIN_PIN`) |
+| **Personal Photos** | 📸 My photos | `ppa_personal_items` | `ppa_personal_sr` | ✏️ pencil button — no PIN (patient/family-facing) |
+
+Switching modes remounts `<Practice key={…}>` so each mode starts with its own independent SR state. The `Practice` component accepts a `srKey` prop (defaults to `SR_KEY`) and threads it through all `srLoad` / `srSave` / `srLoadOrBootstrap` calls.
+
+#### Personal Photos library (`PersonalLibraryPanel`)
+
+- Opens full-screen (replaces the module view, same pattern as `AdminPanel`)
+- Purple header (`#7A5AB8`) to distinguish it from the teal admin panel
+- **+ Add photo** → `ItemForm` (with AI auto-fill on word blur, graphic picker, all cues)
+- **📁 Bulk import** → `BulkImportPanel` (drag-drop multiple images at once)
+- Edit / delete per item; duplicate detection via `checkDuplicate`
+- Items stored as raw JSON in `ppa_personal_items` — **not** routed through the shared dictionary (personal content is private)
+- Item IDs prefixed `personal-` to distinguish from standard (`seed-`, `custom-`) items
+
 ### Spaced Repetition Engine
 
 PPA-adapted SR — deliberately conservative (max 5-day interval, regression decay on every load):
@@ -85,7 +106,12 @@ PPA-adapted SR — deliberately conservative (max 5-day interval, regression dec
 | `phonemic_cued` | ×0.5 | Used the sound cue |
 | `failed` | reset → 1 day | Needed full reveal |
 
-SR state is stored in `localStorage` under `ppa_naming_sr`: `{ [word]: { interval, dueDate, streak, lastResult, lastSeen } }`.
+SR state shape: `{ [word]: { interval, dueDate, streak, lastResult, lastSeen } }`.
+
+- Standard items → `ppa_naming_sr`
+- Personal photo items → `ppa_personal_sr`
+
+`srLoadOrBootstrap(key)` bootstraps from legacy progress-log history only when `key === SR_KEY`; personal items start from a clean slate.
 
 Words answered with `phonemic_cued` or `failed` are re-inserted 4 positions ahead in the session queue for same-session repetition.
 
@@ -126,7 +152,7 @@ Single source of truth for all word graphics, stored in `localStorage` under `pp
 
 ## Key Conventions
 
-- **No backend.** All persistence is `localStorage`. Keys are prefixed `ppa_`.
+- **No backend.** All persistence is `localStorage`. Keys are prefixed `ppa_`. Notable keys: `ppa_naming_items` (standard naming list), `ppa_naming_sr` (standard SR state), `ppa_personal_items` (personal photo items), `ppa_personal_sr` (personal SR state), `ppa_dictionary` (shared graphic store).
 - **Shared code belongs in `shared.jsx`.** Any utility used by more than one module goes there.
 - **Exported constants, not magic strings.** localStorage keys, file extensions, and result type strings are defined once and imported where needed.
 - **Admin PIN** is `"1234"` (defined in `NamingModule.jsx` — change before deployment).
