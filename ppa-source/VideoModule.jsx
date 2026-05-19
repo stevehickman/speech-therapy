@@ -10,10 +10,14 @@ import {
   ppaDownload, ppaHandleReexport, ppaHandleImport,
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
-import { AdminPinEntry } from "./AdminPinEntry.jsx";
+import { AdminPinEntry, CaregiverPinEntry, ChangeCaregiverPinForm } from "./AdminPinEntry.jsx";
 import { CallAPI, ThinkingDots } from "./shared.jsx";
 
+// localStorage key for personal video clip metadata
+const PERSONAL_VIDEOS_KEY = "ppa_personal_videos";
+
 // ── IndexedDB helpers for storing large video file data ─────────────────────
+// Personal video files share the same IDB but use "personal_" prefixed IDs.
 const VIDEO_IDB_NAME    = "ppa_video_files";
 const VIDEO_IDB_STORE   = "files";
 const VIDEO_IDB_VERSION = 1;
@@ -121,10 +125,10 @@ function ImportPanel({ onSave, onCancel }) {
   };
 
   const [fileLoading, setFileLoading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
-  const handleFileChange = (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
+  const processVideoFile = (f) => {
+    if (!f || (!f.type.startsWith("video/") && f.type !== "")) return;
     setFileName(f.name);
     setFileLoading(true);
     const base = f.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
@@ -133,6 +137,15 @@ function ImportPanel({ onSave, onCancel }) {
     reader.onload = (ev) => { setFileUrl(ev.target.result); setFileLoading(false); };
     reader.onerror = () => { setFileLoading(false); };
     reader.readAsDataURL(f);
+  };
+
+  const handleFileChange = (e) => processVideoFile(e.target.files[0]);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0] ?? e.dataTransfer.items?.[0]?.getAsFile();
+    processVideoFile(f);
   };
 
   const autoGenerateQuestions = () => {
@@ -255,18 +268,21 @@ Respond ONLY with valid JSON, no markdown, no extra text:
               {tab === "file" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <label style={{ fontSize: 14, color: "#444", fontWeight: 600 }}>Upload a video file from your device</label>
-                  <div onClick={() => fileRef.current?.click()} style={{ border: "3px dashed #D5CFC4", borderRadius: 14, padding: "32px 20px", textAlign: "center", cursor: "pointer", background: "#F9F6EF", transition: "border-color 0.2s" }}
-                    onMouseOver={e => e.currentTarget.style.borderColor = "#4E8B80"} onMouseOut={e => e.currentTarget.style.borderColor = "#D5CFC4"}>
-                    <div style={{ fontSize: 40, marginBottom: 8 }}>📁</div>
-                    <div style={{ fontSize: 15, color: "#666" }}>{fileName || "Click to choose a video file"}</div>
+                  <div
+                    onClick={() => !fileLoading && fileRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={handleDrop}
+                    style={{ border: `3px dashed ${dragOver ? "#2D5A54" : "#D5CFC4"}`, borderRadius: 14, padding: "32px 20px",
+                      textAlign: "center", cursor: fileLoading ? "default" : "pointer",
+                      background: dragOver ? "#E8F4F2" : "#F9F6EF", transition: "all 0.15s" }}>
+                    <div style={{ fontSize: 40, marginBottom: 8 }}>{fileLoading ? "⏳" : "📁"}</div>
+                    <div style={{ fontSize: 15, color: "#666" }}>
+                      {fileLoading ? "Reading video…" : fileName || "Drop video here, or click to browse"}
+                    </div>
                     <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>MP4, MOV, WebM, AVI supported</div>
                   </div>
                   <input ref={fileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={handleFileChange} />
-                  {fileLoading && (
-                    <div style={{ padding: "16px", background: "#F0F7F5", borderRadius: 12, border: "1px solid #B0D4CE", display: "flex", alignItems: "center", gap: 10, color: "#4E8B80", fontSize: 14 }}>
-                      <ThinkingDots /> Reading video file — please wait...
-                    </div>
-                  )}
                   {fileUrl && !fileLoading && (
                     <div style={{ borderRadius: 14, overflow: "hidden", border: "2px solid #4E8B80" }}>
                       <video src={fileUrl} controls style={{ width: "100%", display: "block", maxHeight: 240, background: "#000" }} />
@@ -407,8 +423,134 @@ Respond ONLY with valid JSON, no markdown, no extra text:
   );
 }
 
+// ── Personal Videos Library Panel ─────────────────────────────────────────────
+// Caregiver-facing panel for managing personal video clips.
+// PIN-gated with the caregiver PIN.  Reuses ImportPanel for the 3-step add flow.
+function PersonalVideosLibraryPanel({ clips, fileUrls, onUpdate, onSaveClip, onDeleteClip, onClose }) {
+  const [pinPassed, setPinPassed] = useState(false);
+  const [showChangePin, setShowChangePin] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
+  if (!pinPassed) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "2px solid #E8E0D0", background: "#4A6A9A",
+          display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 20 }}>🎞️</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: "#fff", flex: 1 }}>My Video Clips</span>
+          <button onClick={onClose}
+            style={{ padding: "6px 14px", borderRadius: 10, border: "1px solid #C0D4F080", background: "transparent",
+              color: "#C0D4F0", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+            ✕ Close
+          </button>
+        </div>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <CaregiverPinEntry onSuccess={() => setPinPassed(true)} onCancel={onClose} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Header */}
+      <div style={{ padding: "14px 20px", borderBottom: "2px solid #E8E0D0", background: "#4A6A9A",
+        display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ fontSize: 20 }}>🎞️</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: "#fff", flex: 1 }}>My Video Clips</span>
+        <span style={{ fontSize: 13, color: "#C0D4F0" }}>{clips.length} clip{clips.length !== 1 ? "s" : ""}</span>
+        <button onClick={() => setShowChangePin(p => !p)} title="Change caregiver PIN"
+          style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #C0D4F080", background: "transparent",
+            color: "#C0D4F0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          🔑 PIN
+        </button>
+        <button onClick={onClose}
+          style={{ padding: "6px 14px", borderRadius: 10, border: "1px solid #C0D4F080", background: "transparent",
+            color: "#C0D4F0", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+          ✕ Close
+        </button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+        {showChangePin && (
+          <ChangeCaregiverPinForm onClose={() => setShowChangePin(false)} />
+        )}
+
+        <button onClick={() => setShowAdd(true)}
+          style={{ padding: "12px 0", borderRadius: 12, border: "none",
+            background: "linear-gradient(135deg, #4A6A9A, #2A4A7A)", color: "#fff",
+            fontWeight: 700, cursor: "pointer", fontSize: 15 }}>
+          + Add personal video clip
+        </button>
+
+        {clips.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "32px 20px", color: "#999" }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🎞️</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#4A6A9A", marginBottom: 8 }}>No personal clips yet</div>
+            <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+              Add meaningful videos — family moments, familiar places, favourite activities.<br />
+              The patient will watch each clip and answer comprehension questions.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {clips.map(c => (
+              <div key={c.id} style={{ background: "#FFFDF9", borderRadius: 14, border: "1px solid #E8E0D0",
+                padding: "14px 16px", display: "flex", alignItems: "center", gap: 12,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                <span style={{ fontSize: 28, flexShrink: 0 }}>{c.thumbnail || "🎬"}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "#2D3B36",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.title}</div>
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                    {c.difficulty} • {c.questions?.length ?? 0} questions
+                    {c.youtubeId ? " • YouTube" : c.isLocalFile ? " • local file" : ""}
+                  </div>
+                </div>
+                {confirmDelete === c.id ? (
+                  <>
+                    <button onClick={() => { onDeleteClip(c.id); setConfirmDelete(null); }}
+                      style={{ padding: "6px 12px", borderRadius: 8, border: "none",
+                        background: "#C07070", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                      Delete
+                    </button>
+                    <button onClick={() => setConfirmDelete(null)}
+                      style={{ padding: "6px 10px", borderRadius: 8, border: "2px solid #D5CFC4",
+                        background: "#FFFDF9", color: "#666", cursor: "pointer", fontSize: 13 }}>
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setConfirmDelete(c.id)}
+                    style={{ padding: "6px 10px", borderRadius: 8, border: "2px solid #F0C0C0",
+                      background: "#FFF5F5", color: "#C07070", cursor: "pointer", fontSize: 13 }}>
+                    🗑
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showAdd && (
+        <ImportPanel
+          onSave={clip => { onSaveClip({ ...clip, id: `personal_${Date.now()}`, isPersonal: true }); setShowAdd(false); }}
+          onCancel={() => setShowAdd(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ---- VIDEO MODULE ----
 export default function VideoModule({ addToLog }) {
+  // ── mode ─────────────────────────────────────────────────────────────────────
+  const [videoMode, setVideoMode] = useState("standard"); // "standard" | "personal"
+  const [personalPanelOpen, setPersonalPanelOpen] = useState(false);
+
+  // ── standard clips ────────────────────────────────────────────────────────────
   const [customClips, setCustomClips] = useState(() => {
     try {
       const s = localStorage.getItem("ppa_video_clips");
@@ -422,6 +564,60 @@ export default function VideoModule({ addToLog }) {
   });
 
   const [fileUrls, setFileUrls] = useState({});
+
+  // ── personal clips ────────────────────────────────────────────────────────────
+  const [personalClips, setPersonalClips] = useState(() => {
+    try {
+      const s = localStorage.getItem(PERSONAL_VIDEOS_KEY);
+      return s ? JSON.parse(s).map(normaliseClip) : [];
+    } catch { return []; }
+  });
+  const [personalFileUrls, setPersonalFileUrls] = useState({});
+
+  useEffect(() => {
+    const ids = personalClips.filter(c => c.isLocalFile).map(c => c.id);
+    if (ids.length === 0) return;
+    videoIdb_loadAll(ids).then(map => {
+      if (map.size > 0) setPersonalFileUrls(prev => ({ ...prev, ...Object.fromEntries(map) }));
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const savePersonalClips = async (next, pendingFileEntries = []) => {
+    const normalised = next.map(normaliseClip);
+    for (const { id, fileUrl } of pendingFileEntries) {
+      try { await videoIdb_save(id, fileUrl); } catch (e) {
+        console.warn("PPA: could not save personal video to IndexedDB:", e);
+      }
+    }
+    if (pendingFileEntries.length > 0) {
+      setPersonalFileUrls(prev => {
+        const updated = { ...prev };
+        for (const { id, fileUrl } of pendingFileEntries) updated[id] = fileUrl;
+        return updated;
+      });
+    }
+    setPersonalClips(normalised);
+    try { localStorage.setItem(PERSONAL_VIDEOS_KEY, JSON.stringify(normalised)); } catch (e) {
+      console.warn("PPA: could not save personal clip metadata:", e);
+    }
+  };
+
+  const handleSavePersonalClip = (newClip) => {
+    const next = [...personalClips, newClip];
+    const fileEntries = newClip.fileUrl ? [{ id: newClip.id, fileUrl: newClip.fileUrl }] : [];
+    savePersonalClips(next, fileEntries);
+  };
+
+  const handleDeletePersonalClip = (id) => {
+    savePersonalClips(personalClips.filter(c => c.id !== id), []);
+    videoIdb_delete(id).catch(() => {});
+    setPersonalFileUrls(prev => { const u = { ...prev }; delete u[id]; return u; });
+    if (videoMode === "personal") resetClipState();
+  };
+
+  const personalAllClips = useMemo(() =>
+    personalClips.map(c => c.isLocalFile && personalFileUrls[c.id] ? { ...c, fileUrl: personalFileUrls[c.id] } : c),
+    [personalClips, personalFileUrls]);
 
   useEffect(() => {
     const localIds = customClips.filter(c => c.isLocalFile).map(c => c.id);
@@ -529,7 +725,9 @@ export default function VideoModule({ addToLog }) {
     ...VIDEO_CLIPS.map(c => builtInPatches[c.id] ? { ...c, ...builtInPatches[c.id] } : c),
     ...customClips.map(c => c.isLocalFile && fileUrls[c.id] ? { ...c, fileUrl: fileUrls[c.id] } : c),
   ], [customClips, builtInPatches, fileUrls]);
-  const clip = allClips[clipIdx] || allClips[0];
+
+  const activeClips = videoMode === "personal" ? personalAllClips : allClips;
+  const clip = activeClips[clipIdx] || activeClips[0];
   const question = clip?.questions[qIdx];
   const qTypeColors = Object.fromEntries(Q_TYPES.map(t => [t.type, t.color]));
   const qTypeLabels = Object.fromEntries(Q_TYPES.map(t => [t.type, t.label]));
@@ -588,7 +786,7 @@ export default function VideoModule({ addToLog }) {
   };
 
   const nextClip = () => {
-    const next = (clipIdx + 1) % allClips.length;
+    const next = (clipIdx + 1) % Math.max(activeClips.length, 1);
     setClipIdx(next);
     resetClipState();
   };
@@ -625,6 +823,21 @@ export default function VideoModule({ addToLog }) {
     setEditingClip(null);
     setAdminClipIdx(null);
   };
+
+  // ── Personal Videos Library panel ───────────────────────────────────────────
+  if (personalPanelOpen) {
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <PersonalVideosLibraryPanel
+          clips={personalClips}
+          fileUrls={personalFileUrls}
+          onSaveClip={handleSavePersonalClip}
+          onDeleteClip={handleDeletePersonalClip}
+          onClose={() => setPersonalPanelOpen(false)}
+        />
+      </div>
+    );
+  }
 
   // ── Admin view ──────────────────────────────────────────────────────────────
   if (adminOpen) {
@@ -806,7 +1019,46 @@ export default function VideoModule({ addToLog }) {
   }
 
   return (
-    <div style={{ padding: 20, maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", position: "relative", gap: 18 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Mode tabs */}
+      <div style={{ display: "flex", borderBottom: "2px solid #E8E0D0", background: "#FFFDF9", flexShrink: 0 }}>
+        {[
+          { id: "standard", label: "🎬 Standard" },
+          { id: "personal", label: "🎞️ My clips" },
+        ].map(tab => (
+          <button key={tab.id} onClick={() => { setVideoMode(tab.id); setClipIdx(0); resetClipState(); }}
+            style={{ flex: 1, padding: "11px 8px", border: "none",
+              borderBottom: videoMode === tab.id ? "3px solid #4E8B80" : "3px solid transparent",
+              background: videoMode === tab.id ? "#E8F4F2" : "transparent",
+              color: videoMode === tab.id ? "#2D5A54" : "#888",
+              fontWeight: videoMode === tab.id ? 700 : 500, cursor: "pointer", fontSize: 14,
+              transition: "all 0.15s" }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+    {/* Personal mode empty state */}
+    {videoMode === "personal" && personalAllClips.length === 0 ? (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        gap: 16, padding: 32, textAlign: "center" }}>
+        <div style={{ fontSize: 56 }}>🎞️</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#4A6A9A" }}>No personal clips yet</div>
+        <div style={{ fontSize: 15, color: "#666", lineHeight: 1.6, maxWidth: 340 }}>
+          Add videos of familiar people, places, or activities.<br />
+          The patient watches the clip and answers comprehension questions.
+        </div>
+        <button onClick={() => setPersonalPanelOpen(true)}
+          style={{ padding: "13px 28px", borderRadius: 14, border: "none",
+            background: "linear-gradient(135deg, #4A6A9A, #2A4A7A)",
+            color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer" }}>
+          🎞️ Add my first clip
+        </button>
+      </div>
+    ) : (
+
+    <div style={{ flex: 1, overflowY: "auto", padding: 20, maxWidth: 700, margin: "0 auto", width: "100%",
+      display: "flex", flexDirection: "column", position: "relative", gap: 18, boxSizing: "border-box" }}>
       {pendingAI && (
         <CallAPI messages={pendingAI}
           onResult={t => { setAiComment(t); setLoadingAI(false); setPendingAI(null); }}
@@ -814,7 +1066,7 @@ export default function VideoModule({ addToLog }) {
         />
       )}
 
-      {/* Clip selector + admin gear */}
+      {/* Clip selector + admin/caregiver gear */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <div ref={dropdownRef} style={{ position: "relative", flex: 1 }}>
           <button onClick={() => {
@@ -841,14 +1093,19 @@ export default function VideoModule({ addToLog }) {
           </button>
 
           {dropdownOpen && (() => {
-            const builtIn = allClips.filter(c => !c.isCustom);
-            const custom  = allClips.filter(c =>  c.isCustom);
-            const groups  = [
-              { label: "Easy",     clips: builtIn.filter(c => c.difficulty === "easy"),   color: "#4E8B80" },
-              { label: "Medium",   clips: builtIn.filter(c => c.difficulty === "medium"), color: "#C09040" },
-              { label: "Hard",     clips: builtIn.filter(c => c.difficulty === "hard"),   color: "#C07070" },
-              ...(custom.length > 0 ? [{ label: "My Clips", clips: custom, color: "#B08020" }] : []),
-            ].filter(g => g.clips.length > 0);
+            // In personal mode show flat list; in standard mode show difficulty groups
+            const groups = videoMode === "personal"
+              ? (activeClips.length > 0 ? [{ label: "My Clips", clips: activeClips, color: "#4A6A9A" }] : [])
+              : (() => {
+                  const builtIn = allClips.filter(c => !c.isCustom);
+                  const custom  = allClips.filter(c =>  c.isCustom);
+                  return [
+                    { label: "Easy",     clips: builtIn.filter(c => c.difficulty === "easy"),   color: "#4E8B80" },
+                    { label: "Medium",   clips: builtIn.filter(c => c.difficulty === "medium"), color: "#C09040" },
+                    { label: "Hard",     clips: builtIn.filter(c => c.difficulty === "hard"),   color: "#C07070" },
+                    ...(custom.length > 0 ? [{ label: "My Clips", clips: custom, color: "#B08020" }] : []),
+                  ].filter(g => g.clips.length > 0);
+                })();
 
             return (
               <div style={{ position: "fixed",
@@ -866,7 +1123,7 @@ export default function VideoModule({ addToLog }) {
                       {group.label}
                     </div>
                     {group.clips.map(c => {
-                      const i = allClips.indexOf(c);
+                      const i = activeClips.indexOf(c);
                       const done = scores[c.id] !== undefined;
                       const isSel = i === clipIdx;
                       return (
@@ -882,11 +1139,9 @@ export default function VideoModule({ addToLog }) {
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: isSel ? 700 : 600,
                               color: isSel ? "#2D5A54" : "#2D3B36" }}>{c.title}</div>
-                            <div style={{ fontSize: 12, color: "#999", marginTop: 1 }}>{c.questions.length} questions</div>
+                            <div style={{ fontSize: 12, color: "#999", marginTop: 1 }}>{c.questions?.length ?? 0} questions</div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                            {c.isCustom && <span style={{ fontSize: 10, padding: "2px 7px", background: "#D4A84330",
-                              color: "#B08020", borderRadius: 6, fontWeight: 800 }}>MY</span>}
                             {done && <span style={{ fontSize: 12, color: "#9B7FB8", fontWeight: 700 }}>✓ {scores[c.id]}/{c.questions.length}</span>}
                             {isSel && <span style={{ fontSize: 14, color: "#4E8B80" }}>●</span>}
                           </div>
@@ -900,14 +1155,26 @@ export default function VideoModule({ addToLog }) {
           })()}
         </div>
 
-        <button onClick={openAdmin} title="Admin: manage video clips"
-          style={{ flexShrink: 0, width: 34, height: 34, borderRadius: "50%", border: "2px solid #D5CFC4",
-            background: "#FFFDF9", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center",
-            justifyContent: "center", color: "#888", transition: "all 0.2s" }}
-          onMouseOver={e => { e.currentTarget.style.borderColor = "#4E8B80"; e.currentTarget.style.color = "#4E8B80"; }}
-          onMouseOut={e => { e.currentTarget.style.borderColor = "#D5CFC4"; e.currentTarget.style.color = "#888"; }}>
-          {"⚙️"}
-        </button>
+        {/* ⚙️ clinician admin (standard) or ✏️ caregiver library (personal) */}
+        {videoMode === "standard" ? (
+          <button onClick={openAdmin} title="Clinician: manage video clips"
+            style={{ flexShrink: 0, width: 34, height: 34, borderRadius: "50%", border: "2px solid #D5CFC4",
+              background: "#FFFDF9", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center",
+              justifyContent: "center", color: "#888", transition: "all 0.2s" }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = "#4E8B80"; e.currentTarget.style.color = "#4E8B80"; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = "#D5CFC4"; e.currentTarget.style.color = "#888"; }}>
+            {"⚙️"}
+          </button>
+        ) : (
+          <button onClick={() => setPersonalPanelOpen(true)} title="Manage my clips"
+            style={{ flexShrink: 0, width: 34, height: 34, borderRadius: "50%", border: "2px solid #D5CFC4",
+              background: "#FFFDF9", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center",
+              justifyContent: "center", color: "#888", transition: "all 0.2s" }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = "#4A6A9A"; e.currentTarget.style.color = "#4A6A9A"; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = "#D5CFC4"; e.currentTarget.style.color = "#888"; }}>
+            {"✏️"}
+          </button>
+        )}
       </div>
 
       {/* WATCH phase */}
@@ -1099,6 +1366,8 @@ export default function VideoModule({ addToLog }) {
           </div>
         </div>
       )}
+    </div>
+    )} {/* end personal-empty-state else */}
     </div>
   );
 }

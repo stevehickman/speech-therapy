@@ -73,6 +73,27 @@ Animated three-dot spinner. Use during any AI loading state.
 
 ## Naming Module (`NamingModule.jsx`)
 
+### Modes
+
+The module has two practice modes toggled by tabs at the top of the view:
+
+| Mode | Tab | Items source | SR key | Admin access |
+|---|---|---|---|---|
+| **Standard** | 📚 Standard | `dictLoadNamingItems()` → `ppa_naming_items` | `ppa_naming_sr` | ⚙️ gear button — PIN-gated (`ADMIN_PIN`) |
+| **Personal Photos** | 📸 My photos | `ppa_personal_items` | `ppa_personal_sr` | ✏️ pencil button — no PIN (patient/family-facing) |
+
+Switching modes remounts `<Practice key={…}>` so each mode starts with its own independent SR state. The `Practice` component accepts a `srKey` prop (defaults to `SR_KEY`) and threads it through all `srLoad` / `srSave` / `srLoadOrBootstrap` calls.
+
+#### Personal Photos library (`PersonalLibraryPanel`)
+
+- Opens full-screen (replaces the module view, same pattern as `AdminPanel`)
+- Purple header (`#7A5AB8`) to distinguish it from the teal admin panel
+- **+ Add photo** → `ItemForm` (with AI auto-fill on word blur, graphic picker, all cues)
+- **📁 Bulk import** → `BulkImportPanel` (drag-drop multiple images at once)
+- Edit / delete per item; duplicate detection via `checkDuplicate`
+- Items stored as raw JSON in `ppa_personal_items` — **not** routed through the shared dictionary (personal content is private)
+- Item IDs prefixed `personal-` to distinguish from standard (`seed-`, `custom-`) items
+
 ### Spaced Repetition Engine
 
 PPA-adapted SR — deliberately conservative (max 5-day interval, regression decay on every load):
@@ -85,7 +106,12 @@ PPA-adapted SR — deliberately conservative (max 5-day interval, regression dec
 | `phonemic_cued` | ×0.5 | Used the sound cue |
 | `failed` | reset → 1 day | Needed full reveal |
 
-SR state is stored in `localStorage` under `ppa_naming_sr`: `{ [word]: { interval, dueDate, streak, lastResult, lastSeen } }`.
+SR state shape: `{ [word]: { interval, dueDate, streak, lastResult, lastSeen } }`.
+
+- Standard items → `ppa_naming_sr`
+- Personal photo items → `ppa_personal_sr`
+
+`srLoadOrBootstrap(key)` bootstraps from legacy progress-log history only when `key === SR_KEY`; personal items start from a clean slate.
 
 Words answered with `phonemic_cued` or `failed` are re-inserted 4 positions ahead in the session queue for same-session repetition.
 
@@ -116,6 +142,21 @@ Single source of truth for all word graphics, stored in `localStorage` under `pp
 
 ---
 
+## Video Module (`VideoModule.jsx`)
+
+Two practice modes, tab-switched at the top of the module (same pattern as Naming):
+
+| Mode | Tab | Clips source | Admin button |
+|---|---|---|---|
+| **Standard** | 🎬 Standard | `VIDEO_CLIPS` (built-in) + `ppa_video_clips` (custom) | ⚙️ clinician PIN |
+| **Personal** | 🎞️ My clips | `ppa_personal_videos` + IndexedDB for file data | ✏️ caregiver PIN |
+
+Personal clip metadata is stored in `ppa_personal_videos` (localStorage). Binary video data (local file uploads) shares the same IndexedDB store (`ppa_video_files`) using `personal_`-prefixed IDs. The `ImportPanel` 3-step flow (source → details → questions) is reused for both modes.
+
+**Video file upload** has full drag-and-drop support (consistent with photo import).
+
+---
+
 ## Export / Import System (`ExportImportSystem.jsx`)
 
 - **`.ppa` files** — per-module item exports (naming items, scripts, sentences, etc.). Format: `{ ppaExport: true, moduleId, items: [...] }`.
@@ -124,9 +165,66 @@ Single source of truth for all word graphics, stored in `localStorage` under `pp
 
 ---
 
+## Role Model
+
+The app recognises three distinct actors with different access levels:
+
+| Actor | Who | What they can do in the app | Access gate |
+|---|---|---|---|
+| **Patient** | The person receiving therapy | Practices all exercises; no content management | None — open access |
+| **Caregiver** | Family member or carer | Adds personal photos and personal video clips; changes caregiver PIN | Caregiver PIN (stored in `ppa_caregiver_pin`, default `"0000"`) |
+| **Clinician** | Therapist / SLP | Full admin: clinical word lists, exercise configs, `.ppa` export/import | Clinician PIN (`ADMIN_PIN = "1234"` in `AdminPinEntry.jsx` — change before deployment) |
+
+### PIN components (`AdminPinEntry.jsx`)
+
+| Export | Purpose |
+|---|---|
+| `ADMIN_PIN` | Clinician PIN constant |
+| `AdminPinEntry` | Clinician gate component (teal-themed) |
+| `CAREGIVER_PIN_KEY` | localStorage key for caregiver PIN |
+| `DEFAULT_CAREGIVER_PIN` | `"0000"` |
+| `getCaregiverPin()` / `setCaregiverPin(pin)` | Read/write caregiver PIN |
+| `CaregiverPinEntry` | Caregiver gate component (purple-themed, shows default-PIN warning) |
+| `ChangeCaregiverPinForm` | Inline form for changing caregiver PIN; embed in any caregiver panel header |
+
+### Caregiver-gated areas
+
+- **Personal Photos library** (`PersonalLibraryPanel` in `NamingModule.jsx`) — `🔑 PIN` button in header opens `ChangeCaregiverPinForm`
+- **Personal Video Clips library** (`PersonalVideosLibraryPanel` in `VideoModule.jsx`) — same pattern
+
+### Clinician-gated areas
+
+- **Naming Admin panel** — word list, bulk import, generate by category, export/import `.ppa`
+- **Video Questions Admin** — built-in clip questions, custom clip management, export/import `.ppa`
+
+---
+
+## Clinician Transfer Architecture (design — not yet built)
+
+The intended flow for distributing clinician-authored content to patient devices:
+
+```
+Clinician App (separate Vite build)
+  └─ Authors word lists, video clip sets, exercise configs
+  └─ Exports a signed .ppaclinician bundle
+        ↓  (QR code, AirDrop, or shared link)
+Patient App (this app)
+  └─ "Import from clinician" flow reads the bundle
+  └─ Merges items into ppa_naming_items / ppa_video_clips
+  └─ Records _sourceFile so items can be re-exported cleanly
+```
+
+Key design constraints:
+- **No backend / no accounts.** Transfer is always a file (`.ppaclinician` JSON, possibly zipped).
+- **Signing / trust.** The clinician app stamps bundles with a shared secret or simple checksum so the patient app can verify authenticity before merging.
+- **Merge semantics.** Same de-duplication logic as existing `.ppa` imports — same-`id` items update in place; new items are appended; patient-side custom items are untouched.
+- **Caregiver-vs-clinician content.** Items sourced from a clinician bundle carry `_sourceType: "clinician"` so the admin panel can show their provenance and offer selective re-export back to the clinician.
+
+---
+
 ## Key Conventions
 
-- **No backend.** All persistence is `localStorage`. Keys are prefixed `ppa_`.
+- **No backend.** All persistence is `localStorage`. Keys are prefixed `ppa_`. Notable keys: `ppa_naming_items` (standard naming list), `ppa_naming_sr` (standard SR state), `ppa_personal_items` (personal photo items), `ppa_personal_sr` (personal SR state), `ppa_personal_videos` (personal video clip metadata), `ppa_video_clips` (custom standard video clips), `ppa_caregiver_pin` (caregiver PIN), `ppa_dictionary` (shared graphic store).
 - **Shared code belongs in `shared.jsx`.** Any utility used by more than one module goes there.
 - **Exported constants, not magic strings.** localStorage keys, file extensions, and result type strings are defined once and imported where needed.
 - **Admin PIN** is `"1234"` (defined in `NamingModule.jsx` — change before deployment).
