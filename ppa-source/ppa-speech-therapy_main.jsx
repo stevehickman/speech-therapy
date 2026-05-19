@@ -175,7 +175,7 @@ export default function App() {
     sentence:         <SentenceModule addToLog={addToLog} />,
     scripts:          <ScriptsModule />,
     sentence_builder: <SentenceBuilderModule addToLog={addToLog} />,
-    video:            <VideoModule addToLog={addToLog} />,
+    video:            <VideoModule addToLog={addToLog} conditionType={conditionType} />,
     progress:         <ProgressModule sessionLog={sessionLog} bkt={bkt} bktSnapshots={bktSnapshots} conditionType={conditionType} />,
     family:           <FamilyModule members={familyMembers} onUpdate={handleFamilyUpdate} />,
     content:          <ContentLibraryModule items={contentItems} onUpdate={handleContentUpdate} />,

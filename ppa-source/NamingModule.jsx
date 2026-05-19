@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { NAMING_ITEMS } from "./data/namingItems.js";
 import { CLAUDE_MODEL, SYSTEM_PROMPT } from "./data/config.js";
 import { CallAPI, ThinkingDots, fetchAnthropicApi, checkDuplicate, DuplicateConflictModal, ZoomableGraphic } from "./shared.jsx";
+import { aqRecord } from "./data/adaptiveQuiz.js";
 import { CaregiverPinEntry, ChangeCaregiverPinForm } from "./AdminPinEntry.jsx";
 import {
   PPA_EXT,
@@ -1373,6 +1374,11 @@ function Practice({ items, addToLog, srKey = SR_KEY }) {
     const newScore = { ...score, [type]: score[type] + 1 };
     setScore(newScore);
     addToLog({ type: "naming", word: item.word, result: type, response, time: new Date().toLocaleTimeString() });
+
+    // Feed naming results into the shared adaptive quiz store for cross-module decay tracking.
+    const isCorrect = type === "correct" || type === "space_cued";
+    const hintLevel = type === "correct" ? 0 : type === "space_cued" ? 1 : type === "semantic_cued" ? 2 : 3;
+    aqRecord({ factKey: `naming::${item.word}`, category: item.category ?? "naming", correct: isCorrect, hintLevel });
 
     // Update SR state
     const newSR = srRecord(srState, item.word, type);
