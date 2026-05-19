@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { NAMING_ITEMS } from "./data/namingItems.js";
 import { CLAUDE_MODEL, SYSTEM_PROMPT } from "./data/config.js";
 import { CallAPI, ThinkingDots, fetchAnthropicApi, checkDuplicate, DuplicateConflictModal, ZoomableGraphic } from "./shared.jsx";
+import { CaregiverPinEntry, ChangeCaregiverPinForm } from "./AdminPinEntry.jsx";
 import {
   PPA_EXT,
   ppaGetSnapshots, ppaFilesForModule, ppaAddKnownFile,
@@ -1697,8 +1698,11 @@ function PBtn({ color, onClick, children }) {
 }
 
 // ── Personal Library Panel ─────────────────────────────────────────────────────
-// Family/patient-facing panel for managing personal photo items. No PIN required.
+// Caregiver-facing panel for managing personal photo items.
+// Requires the caregiver PIN (separate from the clinician/admin PIN).
 function PersonalLibraryPanel({ items, onUpdate, onClose }) {
+  const [pinPassed, setPinPassed] = useState(false);
+  const [showChangePin, setShowChangePin] = useState(false);
   const [mode, setMode]         = useState("list"); // list | add | edit | bulkimport
   const [editTarget, setEditTarget] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -1744,6 +1748,26 @@ function PersonalLibraryPanel({ items, onUpdate, onClose }) {
     setMode("list");
   };
 
+  if (!pinPassed) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "2px solid #E8E0D0", background: "#7A5AB8",
+          display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 20 }}>📸</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: "#fff", flex: 1 }}>My Photos Library</span>
+          <button onClick={onClose}
+            style={{ padding: "6px 14px", borderRadius: 10, border: "1px solid #D4C4F080", background: "transparent",
+              color: "#D4C4F0", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+            ✕ Close
+          </button>
+        </div>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <CaregiverPinEntry onSuccess={() => setPinPassed(true)} onCancel={onClose} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Header */}
@@ -1752,6 +1776,11 @@ function PersonalLibraryPanel({ items, onUpdate, onClose }) {
         <span style={{ fontSize: 20 }}>📸</span>
         <span style={{ fontSize: 16, fontWeight: 700, color: "#fff", flex: 1 }}>My Photos Library</span>
         <span style={{ fontSize: 13, color: "#D4C4F0" }}>{items.length} photo{items.length !== 1 ? "s" : ""}</span>
+        <button onClick={() => setShowChangePin(p => !p)} title="Change caregiver PIN"
+          style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #D4C4F080", background: "transparent",
+            color: "#D4C4F0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          🔑 PIN
+        </button>
         <button onClick={onClose}
           style={{ padding: "6px 14px", borderRadius: 10, border: "1px solid #D4C4F080", background: "transparent",
             color: "#D4C4F0", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
@@ -1760,6 +1789,11 @@ function PersonalLibraryPanel({ items, onUpdate, onClose }) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+        {showChangePin && (
+          <div style={{ marginBottom: 16 }}>
+            <ChangeCaregiverPinForm onClose={() => setShowChangePin(false)} />
+          </div>
+        )}
         {mode === "list" && (
           <>
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
