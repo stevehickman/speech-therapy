@@ -28,9 +28,13 @@ HOW TO INSTALL
 
 3. Follow the on-screen prompts:
    • Confirm or change the install location  (default: ~/PPA Therapy)
-   • Paste your Anthropic API key
+   • Paste your Anthropic API key  (you can skip this and enter it later)
    • The installer sets up the app, installs packages, and creates
      a "Launch PPA Therapy" icon on your Desktop.
+
+   If you skipped the API key step, the app will prompt you for it
+   on first launch.  Enter the caregiver PIN (default: 0000) when
+   asked, then paste your key.
 
 4. After installation, double-click "Launch PPA Therapy" on your Desktop
    to start the app. It opens automatically in your browser.

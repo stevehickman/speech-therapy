@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 import { TOOLS } from "./data/tools.js";
 import { ppaBackupIsStale, ppaDoBackup } from "./ExportImportSystem.jsx";
+import { hasApiKey, setApiKey } from "./shared.jsx";
+import { CaregiverPinEntry } from "./AdminPinEntry.jsx";
 
 // Familiar modules
 import { bktInitialState, bktUpdate, bktAllTrajectories, bktSnapshotFromSession, applyTimeDecay, BKT_PARAMS, CONDITION_PROFILES, DEFAULT_CONDITION, logEntryToAttempt } from "./lib/bkt.js";
@@ -59,9 +61,106 @@ function initBktWithDecay(bkt, lastSessionMs, conditionType) {
 }
 
 // ---- APP ----
+function ApiKeySetupModal({ onDone }) {
+  const [step, setStep] = useState("pin"); // "pin" | "key"
+  const [keyInput, setKeyInput] = useState("");
+  const [keyError, setKeyError] = useState("");
+
+  const handlePinSuccess = () => setStep("key");
+
+  const handleSaveKey = () => {
+    const trimmed = keyInput.trim();
+    if (!trimmed.startsWith("sk-ant-")) {
+      setKeyError("Key should start with sk-ant-…");
+      return;
+    }
+    setApiKey(trimmed);
+    onDone();
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 10000, fontFamily: "'Georgia', 'Times New Roman', serif",
+    }}>
+      <div style={{
+        background: "#FFFDF9", borderRadius: 20, padding: 32, maxWidth: 440, width: "90%",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.3)",
+      }}>
+        {step === "pin" ? (
+          <>
+            <div style={{ textAlign: "center", marginBottom: 16 }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>🔑</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#2D3B36", marginBottom: 8 }}>
+                API key required
+              </div>
+              <div style={{ fontSize: 14, color: "#666", lineHeight: 1.6 }}>
+                Dr. Aria's AI feedback needs an Anthropic API key.
+                Caregiver access is required to set it.
+              </div>
+            </div>
+            <CaregiverPinEntry onSuccess={handlePinSuccess} onCancel={onDone} />
+          </>
+        ) : (
+          <>
+            <div style={{ textAlign: "center", marginBottom: 20 }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>🤖</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#2D3B36", marginBottom: 8 }}>
+                Enter Anthropic API key
+              </div>
+              <div style={{ fontSize: 14, color: "#666", lineHeight: 1.6 }}>
+                Get your key at{" "}
+                <a href="https://console.anthropic.com" target="_blank" rel="noreferrer"
+                  style={{ color: "#4E8B80" }}>
+                  console.anthropic.com
+                </a>
+                . Cost is typically under $10/month.
+              </div>
+            </div>
+            <input
+              type="password"
+              value={keyInput}
+              onChange={e => { setKeyInput(e.target.value); setKeyError(""); }}
+              onKeyDown={e => e.key === "Enter" && handleSaveKey()}
+              placeholder="sk-ant-api03-…"
+              autoFocus
+              style={{
+                width: "100%", padding: "12px 16px", fontSize: 15, borderRadius: 12,
+                border: `2px solid ${keyError ? "#C07070" : "#C4A8E8"}`,
+                outline: "none", background: "#FAF7FF", boxSizing: "border-box",
+                fontFamily: "monospace", marginBottom: 8,
+              }}
+            />
+            {keyError && (
+              <div style={{ color: "#C07070", fontSize: 13, marginBottom: 8 }}>⚠ {keyError}</div>
+            )}
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <button onClick={handleSaveKey} style={{
+                flex: 1, padding: "11px 0", background: "linear-gradient(135deg, #7A5AB8, #5A2A80)",
+                color: "#fff", border: "none", borderRadius: 10, cursor: "pointer",
+                fontWeight: 700, fontSize: 15,
+              }}>
+                Save key
+              </button>
+              <button onClick={onDone} style={{
+                padding: "11px 18px", background: "#F5F0E8", border: "2px solid #D5CFC4",
+                borderRadius: 10, cursor: "pointer", fontWeight: 600, color: "#666", fontSize: 15,
+              }}>
+                Skip
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [active, setActive] = useState("therapist");
   const [appBackupStale, setAppBackupStale] = useState(() => ppaBackupIsStale(7));
+  const [showApiKeySetup, setShowApiKeySetup] = useState(() => !hasApiKey());
 
   // Session log (existing speech-therapy mechanism)
   const _TODAY_KEY = `ppa_progress_${new Date().toISOString().slice(0, 10)}`;
@@ -255,6 +354,10 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {showApiKeySetup && (
+        <ApiKeySetupModal onDone={() => setShowApiKeySetup(false)} />
+      )}
     </div>
   );
 }

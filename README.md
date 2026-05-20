@@ -4,7 +4,9 @@ I'm also attaching the user doc to this post. Anyone who wants is welcome to try
 
 Almost all of this (including the documentation) was generated using Claude.ai . What that means is this: I haven't read the doc thoroughly yet. I haven't fully tested this yet. There could be bugs. I'm open to any and all feedback. I suggest you try it out using the link below and, only install it locally.if you really like it. 
 
-I'm not posting the install instructions at this time because I'm still working to make them as simple as possible. If you want them,  LMK
+I'm not posting the install instructions at this time because I'm still working to make them as simple as possible. If you want them, LMK
+
+If you do install it locally, the app will prompt you for your Anthropic API key on first launch if it wasn't entered during installation — just enter your caregiver PIN (default: 0000) and paste the key when asked.
 
 Here's the link to try it out:
 https://claude.ai/.../67f0b831-4d44-4135-af2f-b562a7181b48
