@@ -6,6 +6,23 @@ import { useState, useEffect } from "react";
 import { CLAUDE_MODEL, SYSTEM_PROMPT } from "./data/config.js";
 import { isImageGraphic } from "./data/dictionary.js";
 
+// ── API key helpers ────────────────────────────────────────────────────────────
+// The key can come from the Vite env (set at build/install time) or from
+// localStorage (set at runtime via the caregiver setup flow).
+export const API_KEY_STORAGE_KEY = "ppa_api_key";
+
+export function getApiKey() {
+  return localStorage.getItem(API_KEY_STORAGE_KEY) || import.meta.env.VITE_ANTHROPIC_API_KEY || "";
+}
+
+export function setApiKey(key) {
+  localStorage.setItem(API_KEY_STORAGE_KEY, key.trim());
+}
+
+export function hasApiKey() {
+  return Boolean(getApiKey());
+}
+
 // ── fetchAnthropicApi ──────────────────────────────────────────────────────────
 // Low-level fetch helper with all required Anthropic headers pre-applied.
 // `body`   — the full request body object (caller supplies model, messages, etc.)
@@ -17,7 +34,7 @@ export async function fetchAnthropicApi(body, signal) {
     signal,
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY ?? "",
+      "x-api-key": getApiKey(),
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true",
     },
