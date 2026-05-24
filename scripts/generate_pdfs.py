@@ -472,16 +472,24 @@ def build_user_guide(path):
     story.append(Paragraph("Getting Started", ST['section']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("Opening the App", ST['subsection']))
+    story.append(Paragraph("Starting the App", ST['subsection']))
     story.append(Paragraph(
-        "The app runs entirely in your web browser — there is nothing to install for basic use. "
-        "Open the app in <b>Chrome</b> or <b>Safari</b> on any device. The recommended screen "
-        "size is a tablet or laptop (10\" or larger).",
+        "Double-click <b>Launch PPA Therapy</b> on your Desktop. A small console window "
+        "opens (this is normal — it runs the local server), and the app loads automatically "
+        "in your browser within a few seconds. The recommended screen size is a tablet or "
+        "laptop (10\" or larger).",
         ST['normal']))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(
-        "On <b>iPad</b>, tap the Share button in Safari then <b>Add to Home Screen</b> to install "
-        "the app as a PWA — it will open full-screen without the browser toolbar.",
+        "To stop the app, close the console window. The browser tab can be closed at any time "
+        "— your progress is saved automatically.",
+        ST['normal']))
+    story.append(Spacer(1, 0.15*cm))
+    story.append(Paragraph(
+        "<b>iPad / direct browser use:</b> The app can also be opened directly in Safari or "
+        "Chrome without the installer — contact your clinician for the URL. On iPad, tap the "
+        "Share button in Safari then <b>Add to Home Screen</b> to install it as a PWA and "
+        "open it full-screen without the browser toolbar.",
         ST['normal']))
     story.append(Spacer(1, 0.3*cm))
 
