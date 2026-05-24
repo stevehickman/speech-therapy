@@ -13,6 +13,11 @@ export const PPA_FILES_KEY    = "ppa_known_files";
 export const DICT_KEY        = "ppa_dictionary";   // unified word info for all modules
 export const DICT_NAMING_KEY = "ppa_naming_items"; // naming practice list (also read by SR engine)
 
+// All localStorage key prefixes that belong to this app.
+// Used by backup / restore / key-count so that fam_* data is never missed.
+export const APP_KEY_PREFIXES = ["ppa_", "fam_"];
+const isAppKey = k => APP_KEY_PREFIXES.some(p => k.startsWith(p));
+
 // ── Core utilities ─────────────────────────────────────────────────────────────
 
 export function ppaGetSnapshots() {
@@ -488,6 +493,7 @@ export function ppaContentStateHash() {
     "ppa_naming_items", "ppa_repetition_levels", "ppa_scripts",
     "ppa_sentence_completions", "ppa_sentence_constructions",
     "ppa_video_clips", "ppa_video_patches", "ppa_sb_library", DICT_KEY,
+    "fam_persons", "fam_relationships",  // family graph data
   ];
   let h = 0;
   for (const k of CONTENT_KEYS) {
@@ -511,9 +517,9 @@ export function ppaBackupIsStale(maxAgeDays = 7) {
   } catch { return true; }
 }
 
-// Collect everything — all ppa_* keys — and download as .ppabak
+// Collect everything — all ppa_* and fam_* keys — and download as .ppabak
 export function ppaDoBackup(basenameHint = "ppa-therapy-backup") {
-  const allKeys = Object.keys(localStorage).filter(k => k.startsWith("ppa_"));
+  const allKeys = Object.keys(localStorage).filter(isAppKey);
   const data = {};
   for (const k of allKeys) {
     try { data[k] = JSON.parse(localStorage.getItem(k)); }
@@ -612,8 +618,8 @@ export function BackupRestorePanel({ onBackupDone } = {}) {
     });
   };
 
-  // Count keys in localStorage
-  const keyCount = Object.keys(localStorage).filter(k => k.startsWith("ppa_")).length;
+  // Count keys in localStorage (all app-owned prefixes)
+  const keyCount = Object.keys(localStorage).filter(isAppKey).length;
   const isStale  = ppaBackupIsStale(7);
   const lastBak  = (() => {
     try {
