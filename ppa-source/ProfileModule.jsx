@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CONDITION_PROFILES } from "./lib/bkt.js";
-import { AdminPinEntry } from "./AdminPinEntry.jsx";
+import { CaregiverPinEntry } from "./AdminPinEntry.jsx";
 
 export const PROFILE_KEY = "fam_profile";
 
@@ -55,7 +55,7 @@ export default function ProfileModule({ profile, onSave }) {
   if (view === "pin") {
     return (
       <div style={{ padding: 20, maxWidth: 420, margin: "0 auto" }}>
-        <AdminPinEntry
+        <CaregiverPinEntry
           onSuccess={() => setView("settings")}
           onCancel={() => setView("profile")} />
       </div>

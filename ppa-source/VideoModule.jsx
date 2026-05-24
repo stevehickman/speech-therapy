@@ -10,7 +10,7 @@ import {
   ppaDownload, ppaHandleReexport, ppaHandleImport,
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
-import { AdminPinEntry, CaregiverPinEntry, ChangeCaregiverPinForm } from "./AdminPinEntry.jsx";
+import { CaregiverPinEntry, ChangeCaregiverPinForm } from "./AdminPinEntry.jsx";
 import { CallAPI, ThinkingDots, fetchAnthropicApi } from "./shared.jsx";
 import { AdaptiveChoiceQuestion } from "./AdaptiveChoiceQuestion.jsx";
 import { aqNeedsTagging, aqSaveDistractorTags } from "./data/adaptiveQuiz.js";

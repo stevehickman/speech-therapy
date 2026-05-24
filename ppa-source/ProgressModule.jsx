@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { ppaBackupIsStale, BackupRestorePanel } from "./ExportImportSystem.jsx";
-import { AdminPinEntry } from "./AdminPinEntry.jsx";
+import { CaregiverPinEntry } from "./AdminPinEntry.jsx";
 import { CallAPI, ThinkingDots } from "./shared.jsx";
 import { bktAllTrajectories, BKT_PARAMS, CONDITION_PROFILES, DEFAULT_CONDITION } from "./lib/bkt.js";
 
@@ -335,7 +335,7 @@ export default function ProgressModule({ sessionLog, bkt, bktSnapshots, conditio
     if (!adminUnlocked) {
       return (
         <div style={{ padding: 20, maxWidth: 480, margin: "0 auto" }}>
-          <AdminPinEntry
+          <CaregiverPinEntry
             onSuccess={() => { setAdminUnlocked(true); setEditSettings({ ...settings }); }}
             onCancel={() => setView("dashboard")} />
         </div>

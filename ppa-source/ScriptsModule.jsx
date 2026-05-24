@@ -7,7 +7,7 @@ import {
   ppaDownload, ppaHandleReexport, ppaHandleImport,
   PpaAdminToolbar, PpaExportDialog, PpaReexportDialog,
 } from "./ExportImportSystem.jsx";
-import { AdminPinEntry } from "./AdminPinEntry.jsx";
+import { CaregiverPinEntry } from "./AdminPinEntry.jsx";
 import { isDuplicateString } from "./shared.jsx";
 
 export default function ScriptsModule() {
@@ -231,7 +231,7 @@ export default function ScriptsModule() {
         )}
         <div style={{ maxWidth: 640, margin: "0 auto", padding: 24 }}>
           {!pinPassed ? (
-            <AdminPinEntry onSuccess={() => setPinPassed(true)} onCancel={forceCloseAdmin} />
+            <CaregiverPinEntry onSuccess={() => setPinPassed(true)} onCancel={forceCloseAdmin} />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               {/* Header */}
