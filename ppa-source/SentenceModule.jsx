@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { SENTENCE_COMPLETIONS, SENTENCE_CONSTRUCTIONS } from "./data/sentenceTasks.js";
+import { CONDITION_PROFILES, DEFAULT_CONDITION } from "./lib/bkt.js";
 import {
   PPA_EXT,
   ppaGetSnapshots, ppaFilesForModule, ppaAddKnownFile,
@@ -10,7 +11,20 @@ import {
 import { CaregiverPinEntry } from "./AdminPinEntry.jsx";
 import { CallAPI, ThinkingDots, Btn, checkDuplicate, DuplicateConflictModal } from "./shared.jsx";
 
-export default function SentenceModule({ addToLog }) {
+// Deterministic shuffle — same seed always yields the same order, so chips
+// don't jump around on re-renders while the patient is still reading them.
+function seededShuffle(arr, seed) {
+  const a = [...arr];
+  let s = seed >>> 0;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    const j = s % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+export default function SentenceModule({ addToLog, conditionType = DEFAULT_CONDITION }) {
   // ── data ────────────────────────────────────────────────────────────────────
   const SM_MODULE_ID = "sentence";
   const smSeedCompl  = () => SENTENCE_COMPLETIONS.map((c, i)   => ({ ...c, _id: `smc-builtin-${i}`, _builtin: true }));
@@ -40,6 +54,56 @@ export default function SentenceModule({ addToLog }) {
   const [loadingAI, setLoadingAI] = useState(false);
   const [pendingAI, setPendingAI] = useState(null);
   const [taskIdx, setTaskIdx] = useState(0);
+
+  // ── adaptive word ordering — diagnosis-aware ────────────────────────────────
+  // Continuous float 0.0–2.0; displayed as Supported / Standard / Challenge.
+  // On each app load the stored level decays toward 0 using the condition's
+  // half_life_days — PPA decays in ~7 days, dementia in ~5, acute aphasia in ~30.
+  // Learn and regress step sizes are also condition-specific so that patients
+  // with fast decay don't overshoot their true ability.
+  const DIFF_KEY = "ppa_sentence_difficulty";
+  const [diffLevel, setDiffLevel] = useState(() => {
+    try {
+      const raw = localStorage.getItem(DIFF_KEY);
+      if (!raw) return 1.0;
+      const parsed = JSON.parse(raw);
+      // Migrate from legacy integer format (previously stored as plain number)
+      if (typeof parsed === "number") return Math.max(0, Math.min(2, parsed));
+      const { level = 1.0, lastSession } = parsed;
+      if (!lastSession) return Math.max(0, Math.min(2, level));
+      const daysSince = (Date.now() - new Date(lastSession).getTime()) / 86400000;
+      if (daysSince <= 1) return Math.max(0, Math.min(2, level)); // same / next day: no decay
+      const { half_life_days } = CONDITION_PROFILES[conditionType] ?? CONDITION_PROFILES[DEFAULT_CONDITION];
+      const decayed = level * Math.pow(2, -daysSince / half_life_days);
+      return Math.max(0, Math.min(2, decayed));
+    } catch { return 1.0; }
+  });
+  const saveDiffLevel = (lvl) => {
+    const clamped = Math.max(0, Math.min(2, lvl));
+    setDiffLevel(clamped);
+    localStorage.setItem(DIFF_KEY, JSON.stringify({
+      level: Math.round(clamped * 1000) / 1000,
+      lastSession: new Date().toISOString().slice(0, 10),
+    }));
+  };
+  // Per-condition step sizes. Faster half-life → smaller learn step (avoid
+  // overshooting); higher p_regress → larger regress step (ensure next task
+  // is achievable). Values mirror the clinical profile data in lib/bkt.js.
+  const CONDITION_DELTAS = {
+    acute_aphasia:       { learn: 0.50, regress: 0.30 },
+    tbi:                 { learn: 0.40, regress: 0.35 },
+    chronic_aphasia:     { learn: 0.30, regress: 0.40 },
+    primary_progressive: { learn: 0.20, regress: 0.50 },
+    dementia:            { learn: 0.15, regress: 0.60 },
+  };
+  const condDeltas = CONDITION_DELTAS[conditionType] ?? CONDITION_DELTAS.primary_progressive;
+  // dir: 1 = Easy (increase), -1 = Hard (decrease), 0 = OK (no change — but still records today)
+  const adjustLevel = (dir) => {
+    const delta = dir > 0 ? condDeltas.learn : dir < 0 ? -condDeltas.regress : 0;
+    saveDiffLevel(diffLevel + delta);
+  };
+  // Integer 0 / 1 / 2 derived from the continuous float — used for badge & chip ordering
+  const difficulty = Math.min(2, Math.max(0, Math.floor(diffLevel)));
 
   // ── admin state ─────────────────────────────────────────────────────────────
   const [adminOpen, setAdminOpen] = useState(false);
@@ -132,6 +196,50 @@ export default function SentenceModule({ addToLog }) {
   };
 
   const next = () => { setTaskIdx(i => i + 1); setInput(""); setFeedback(""); setPendingAI(null); };
+
+  // ── textarea ref + word-insertion helpers ───────────────────────────────────
+  const textareaRef = useRef(null);
+
+  const insertWordAtCursor = (word) => {
+    const el = textareaRef.current;
+    if (!el) {
+      setInput(v => v + (v.length > 0 && !v.endsWith(" ") ? " " : "") + word + " ");
+      return;
+    }
+    const start = el.selectionStart ?? input.length;
+    const end   = el.selectionEnd   ?? input.length;
+    const before = input.slice(0, start);
+    const after  = input.slice(end);
+    const spaceBefore = before.length > 0 && !before.endsWith(" ") ? " " : "";
+    const spaceAfter  = after.length  > 0 && !after.startsWith(" ") ? " " : " ";
+    const inserted = spaceBefore + word + spaceAfter;
+    const newInput = before + inserted + after;
+    const newCursor = start + inserted.length;
+    setInput(newInput);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(newCursor, newCursor); });
+  };
+
+  const deleteLastWord = () => {
+    setInput(v => {
+      const trimmed = v.trimEnd();
+      const lastSpace = trimmed.lastIndexOf(" ");
+      return lastSpace === -1 ? "" : trimmed.slice(0, lastSpace + 1);
+    });
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  // Words to display for the current construction task, ordered by difficulty level.
+  // Recomputes only when the task or difficulty changes; stable across other re-renders.
+  const displayWords = useMemo(() => {
+    const words = task.words || [];
+    const lvl = Math.min(2, Math.max(0, Math.floor(diffLevel)));
+    if (!words.length || lvl === 0) return [...words]; // sentence order — most support
+    const seed = (taskIdx * 997 + lvl * 131) >>> 0;
+    if (lvl === 2) return seededShuffle(words, seed);  // full shuffle — most challenge
+    // Level 1: shuffle each half independently — words stay in rough position
+    const mid = Math.ceil(words.length / 2);
+    return [...seededShuffle(words.slice(0, mid), seed), ...seededShuffle(words.slice(mid), seed ^ 0xCAFE)];
+  }, [task.words, diffLevel, taskIdx]);
 
   // ── admin helpers — completions ─────────────────────────────────────────────
   const addCompletion = () => {
@@ -411,21 +519,42 @@ export default function SentenceModule({ addToLog }) {
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, color: "#999", letterSpacing: 2, textTransform: "uppercase", marginBottom: 14 }}>Make a sentence using these words</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-              {(task.words || []).map((w, i) => (
-                <span key={i} style={{ padding: "6px 14px", background: "#E8F4F2", borderRadius: 20, fontSize: 16, color: "#4E8B80", fontWeight: 600, border: "1px solid #B0D4CE" }}>{w}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13, color: "#999", letterSpacing: 2, textTransform: "uppercase" }}>Make a sentence using these words</div>
+              <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 10, fontWeight: 700, flexShrink: 0, color: "#fff",
+                background: ["#9B7FB8", "#D4A843", "#4E8B80"][difficulty] }}>
+                {["Supported", "Standard", "Challenge"][difficulty]}
+              </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+              {displayWords.map((w, i) => (
+                <button key={i} onClick={() => insertWordAtCursor(w)}
+                  title={`Insert "${w}"`}
+                  style={{ padding: "6px 14px", background: "#E8F4F2", borderRadius: 20, fontSize: 16, color: "#4E8B80", fontWeight: 600, border: "1px solid #B0D4CE", cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}
+                  onMouseOver={e => { e.currentTarget.style.background = "#4E8B80"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#4E8B80"; }}
+                  onMouseOut={e => { e.currentTarget.style.background = "#E8F4F2"; e.currentTarget.style.color = "#4E8B80"; e.currentTarget.style.borderColor = "#B0D4CE"; }}>
+                  {w}
+                </button>
               ))}
             </div>
+            <div style={{ fontSize: 12, color: "#999", marginBottom: 10 }}>Tap a word to insert it</div>
             <div style={{ fontSize: 13, color: "#9B7FB8", marginBottom: 16 }}>Hint: {task.hint}</div>
           </>
         )}
 
-        <textarea value={input} onChange={e => setInput(e.target.value)}
+        <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
           placeholder="Type your sentence here..."
           style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "2px solid #D5CFC4", fontSize: 17, resize: "none", minHeight: 80, background: "#FFFDF9", color: "#2D3B36", outline: "none", lineHeight: 1.5, fontFamily: "inherit" }}
           rows={3}
         />
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+          <button onClick={deleteLastWord} title="Delete last word"
+            style={{ padding: "6px 14px", borderRadius: 10, border: "2px solid #D5CFC4", background: "#FFFDF9", color: "#888", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, transition: "all 0.15s" }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = "#C07070"; e.currentTarget.style.color = "#C07070"; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = "#D5CFC4"; e.currentTarget.style.color = "#888"; }}>
+            ⌫ Delete word
+          </button>
+        </div>
 
         {!feedback && (
           <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
@@ -439,7 +568,34 @@ export default function SentenceModule({ addToLog }) {
         <div style={{ background: "#F0F7F5", borderRadius: 14, padding: "16px 20px", border: "1px solid #B0D4CE" }}>
           <div style={{ fontSize: 13, color: "#4E8B80", fontWeight: 600, marginBottom: 6 }}>🧠 Dr. Aria's Feedback</div>
           {loadingAI ? <ThinkingDots /> : <div style={{ fontSize: 16, color: "#2D3B36", lineHeight: 1.6 }}>{feedback}</div>}
-          {feedback && <button onClick={next} style={{ marginTop: 12, padding: "10px 20px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 15 }}>Next task →</button>}
+          {feedback && mode === "construction" && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>How did that feel? (adjusts word order next time)</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => { adjustLevel(-1); next(); }}
+                  style={{ flex: 1, minWidth: 100, padding: "10px 14px", borderRadius: 12, border: "2px solid #C07070", background: "#FFF5F5", color: "#C07070", cursor: "pointer", fontWeight: 700, fontSize: 14, transition: "all 0.15s" }}
+                  onMouseOver={e => { e.currentTarget.style.background = "#C07070"; e.currentTarget.style.color = "#fff"; }}
+                  onMouseOut={e => { e.currentTarget.style.background = "#FFF5F5"; e.currentTarget.style.color = "#C07070"; }}>
+                  😓 Hard
+                </button>
+                <button onClick={() => { adjustLevel(0); next(); }}
+                  style={{ flex: 1, minWidth: 100, padding: "10px 14px", borderRadius: 12, border: "2px solid #D5CFC4", background: "#F5F0E8", color: "#666", cursor: "pointer", fontWeight: 700, fontSize: 14, transition: "all 0.15s" }}
+                  onMouseOver={e => { e.currentTarget.style.background = "#D5CFC4"; e.currentTarget.style.color = "#333"; }}
+                  onMouseOut={e => { e.currentTarget.style.background = "#F5F0E8"; e.currentTarget.style.color = "#666"; }}>
+                  😐 OK
+                </button>
+                <button onClick={() => { adjustLevel(1); next(); }}
+                  style={{ flex: 1, minWidth: 100, padding: "10px 14px", borderRadius: 12, border: "2px solid #4E8B80", background: "#E8F4F2", color: "#3A7A6F", cursor: "pointer", fontWeight: 700, fontSize: 14, transition: "all 0.15s" }}
+                  onMouseOver={e => { e.currentTarget.style.background = "#4E8B80"; e.currentTarget.style.color = "#fff"; }}
+                  onMouseOut={e => { e.currentTarget.style.background = "#E8F4F2"; e.currentTarget.style.color = "#3A7A6F"; }}>
+                  😊 Easy
+                </button>
+              </div>
+            </div>
+          )}
+          {feedback && mode !== "construction" && (
+            <button onClick={next} style={{ marginTop: 12, padding: "10px 20px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 15 }}>Next task →</button>
+          )}
         </div>
       )}
     </div>

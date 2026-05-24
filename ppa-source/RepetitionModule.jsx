@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { REPETITION_LEVELS } from "./data/repetitionItems.js";
 import {
   PPA_EXT,
@@ -33,6 +33,20 @@ export default function RepetitionModule({ addToLog }) {
   const [result, setResult] = useState(null);
   const [score, setScore] = useState({ correct: 0, partial: 0, incorrect: 0 });
 
+  // TTS state
+  const [speaking, setSpeaking] = useState(null);
+  const [voices, setVoices] = useState([]);
+  const [selectedVoice, setSelectedVoice] = useState(null);
+  const [rate, setRate] = useState(0.85);
+
+  // Speech recognition state
+  const [srAvailable] = useState(() => !!(window.SpeechRecognition || window.webkitSpeechRecognition));
+  const [srEnabled, setSrEnabled] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [srResult, setSrResult] = useState(null);
+  const recognizerRef = useRef(null);
+
   // ── admin state ─────────────────────────────────────────────────────────────
   const [adminOpen, setAdminOpen] = useState(false);
   const [pinPassed, setPinPassed] = useState(false);
@@ -56,6 +70,68 @@ export default function RepetitionModule({ addToLog }) {
     exportedAt: new Date().toISOString(), levels: lvls,
   });
 
+  // ── voices ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const load = () => {
+      const v = window.speechSynthesis.getVoices();
+      if (v.length) {
+        setVoices(v);
+        const preferred = v.find(x => /en[-_](US|GB|AU)/i.test(x.lang) && /natural|samantha|karen|moira|daniel|google/i.test(x.name))
+          || v.find(x => /en/i.test(x.lang)) || v[0];
+        setSelectedVoice(preferred);
+      }
+    };
+    load();
+    window.speechSynthesis.onvoiceschanged = load;
+    return () => { window.speechSynthesis.cancel(); };
+  }, []);
+
+  const speak = (phrase) => {
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(phrase);
+    if (selectedVoice) utt.voice = selectedVoice;
+    utt.rate = rate; utt.pitch = 1.0;
+    utt.onstart = () => setSpeaking(phrase);
+    utt.onend = () => setSpeaking(null);
+    utt.onerror = () => setSpeaking(null);
+    window.speechSynthesis.speak(utt);
+  };
+
+  const stopSpeaking = () => { window.speechSynthesis.cancel(); setSpeaking(null); };
+
+  const startListening = (phrase) => {
+    if (!srAvailable) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+    rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 3;
+    rec.onstart = () => { setListening(true); setTranscript(""); setSrResult(null); };
+    rec.onresult = (e) => {
+      const interim = Array.from(e.results).map(r => r[0].transcript).join(" ");
+      setTranscript(interim);
+      if (e.results[e.results.length - 1].isFinal) {
+        const heard = interim.trim().toLowerCase();
+        const target = phrase.toLowerCase().replace(/[^a-z0-9 ']/g, "");
+        const heardClean = heard.replace(/[^a-z0-9 ']/g, "");
+        const targetWords = target.split(/\s+/);
+        const heardWords = heardClean.split(/\s+/);
+        const matched = targetWords.filter(w => heardWords.includes(w)).length;
+        const matchScore = matched / targetWords.length;
+        const match = matchScore >= 0.75 ? "good" : matchScore >= 0.4 ? "partial" : "low";
+        setSrResult({ phrase, heard: interim.trim(), match, score: Math.round(matchScore * 100) });
+      }
+    };
+    rec.onerror = (e) => { setListening(false); if (e.error === "not-allowed") setSrResult({ phrase, heard: "", match: "denied", score: 0 }); };
+    rec.onend = () => setListening(false);
+    recognizerRef.current = rec;
+    rec.start();
+  };
+
+  const stopListening = () => { recognizerRef.current?.stop(); setListening(false); };
+
+  const matchColors = { good: "#4E8B80", partial: "#D4A843", low: "#C07070", denied: "#999" };
+  const matchLabels = { good: "✓ Great match!", partial: "〜 Partial match — keep practicing", low: "Keep trying — say it slowly", denied: "Microphone access was denied" };
+
+  // ── export / import ─────────────────────────────────────────────────────────
   const handleRmExport = (selectedIds, filename) => {
     const toExport = rmCustomLevels().filter(l => selectedIds.has(ppaItemId(l)));
     const updated  = ppaRecordExportInMemory(toExport, filename);
@@ -96,7 +172,11 @@ export default function RepetitionModule({ addToLog }) {
     addToLog({ type: "repetition", item: current, result: r, time: new Date().toLocaleTimeString() });
   };
 
-  const next = () => { setIdx(i => i + 1); setShowing(true); setResult(null); };
+  const next = () => {
+    stopListening(); stopSpeaking();
+    setTranscript(""); setSrResult(null);
+    setIdx(i => i + 1); setShowing(true); setResult(null);
+  };
 
   // ── admin helpers ───────────────────────────────────────────────────────────
   const deleteItem = (li, ii) => {
@@ -132,6 +212,7 @@ export default function RepetitionModule({ addToLog }) {
     if (adminLevel >= next.length) setAdminLevel(next.length - 1);
   };
 
+  // ── admin view ──────────────────────────────────────────────────────────────
   if (adminOpen) {
     return (
       <div style={{ position: "relative", height: "100%" }}>
@@ -250,6 +331,7 @@ export default function RepetitionModule({ addToLog }) {
     );
   }
 
+  // ── practice view ───────────────────────────────────────────────────────────
   return (
     <div style={{ position: "relative", padding: 24, maxWidth: 600, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Admin gear */}
@@ -260,26 +342,114 @@ export default function RepetitionModule({ addToLog }) {
         {"⚙️"}
       </button>
 
+      {/* Settings row */}
+      <div style={{ background: "#FFFDF9", borderRadius: 14, padding: "14px 18px", border: "1px solid #E8E0D0", display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+        {voices.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 160 }}>
+            <label style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Voice</label>
+            <select value={selectedVoice?.name || ""} onChange={e => setSelectedVoice(voices.find(v => v.name === e.target.value))}
+              style={{ padding: "7px 10px", borderRadius: 9, border: "2px solid #D5CFC4", fontSize: 13, background: "#FFFDF9", color: "#2D3B36", outline: "none", cursor: "pointer" }}>
+              {voices.filter(v => /en/i.test(v.lang)).map(v => (
+                <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 140 }}>
+          <label style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>
+            Speed — {rate <= 0.7 ? "Slow" : rate <= 0.9 ? "Normal" : "Fast"}
+          </label>
+          <input type="range" min={0.5} max={1.2} step={0.05} value={rate} onChange={e => setRate(parseFloat(e.target.value))}
+            style={{ accentColor: "#4E8B80", width: "100%" }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Speech Recognition</label>
+          {srAvailable ? (
+            <button onClick={() => setSrEnabled(e => !e)} style={{ padding: "7px 14px", borderRadius: 20, border: "2px solid", borderColor: srEnabled ? "#4E8B80" : "#D5CFC4", background: srEnabled ? "#E8F4F2" : "#FFFDF9", color: srEnabled ? "#2D5A54" : "#888", fontWeight: 700, cursor: "pointer", fontSize: 13, transition: "all 0.2s", whiteSpace: "nowrap" }}>
+              {srEnabled ? "🎤 On" : "🎤 Off"}
+            </button>
+          ) : (
+            <span style={{ fontSize: 12, color: "#C07070", padding: "7px 0" }}>Not supported in this browser</span>
+          )}
+        </div>
+      </div>
+
+      {/* Level tabs */}
       <div style={{ display: "flex", gap: 8, background: "#F5F0E8", borderRadius: 14, padding: 6 }}>
         {levels.map((l, i) => (
-          <button key={i} onClick={() => { setLevel(i); setIdx(0); setResult(null); setShowing(true); }}
+          <button key={i} onClick={() => { setLevel(i); setIdx(0); setResult(null); setShowing(true); stopListening(); stopSpeaking(); setTranscript(""); setSrResult(null); }}
             style={{ flex: 1, padding: "10px 8px", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, background: level === i ? "#4E8B80" : "transparent", color: level === i ? "#fff" : "#666", transition: "all 0.2s" }}>
             {l.name}
           </button>
         ))}
       </div>
 
+      {/* Item card */}
       <div style={{ background: "#FFFDF9", borderRadius: 20, padding: 36, textAlign: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.06)", border: "1px solid #E8E0D0", minHeight: 180 }}>
         <div style={{ fontSize: 13, color: "#999", letterSpacing: 2, textTransform: "uppercase", marginBottom: 20 }}>Repeat this</div>
         {showing ? (
           <>
-            <div style={{ fontSize: 32, fontWeight: 700, color: "#2D3B36", lineHeight: 1.4, marginBottom: 28 }}>"{current}"</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: "#2D3B36", lineHeight: 1.4, marginBottom: 20 }}>"{current}"</div>
+
             {!result && (
-              <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-                <Btn color="#4E8B80" onClick={() => record("correct")}>✓ Said it correctly</Btn>
-                <Btn color="#D4A843" onClick={() => record("partial")}>〜 Close / partial</Btn>
-                <Btn color="#C07070" onClick={() => record("incorrect")}>✗ Could not repeat</Btn>
-              </div>
+              <>
+                {/* Listen + mic row */}
+                <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", marginBottom: 16 }}>
+                  <button onClick={() => speaking === current ? stopSpeaking() : speak(current)}
+                    title={speaking === current ? "Stop" : "Hear this phrase"}
+                    style={{ width: 48, height: 48, borderRadius: "50%", border: "none", cursor: "pointer", background: speaking === current ? "#C07070" : "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", boxShadow: speaking === current ? "0 0 0 4px #C0707040" : "0 2px 8px #4E8B8040", animation: speaking === current ? "speakPulse 1s ease-in-out infinite" : "none" }}>
+                    {speaking === current ? "■" : "▶"}
+                  </button>
+                  {srEnabled && (
+                    <button onClick={() => listening ? stopListening() : startListening(current)}
+                      style={{ padding: "12px 24px", borderRadius: 14, border: "none", cursor: "pointer", fontSize: 15, fontWeight: 700, color: "#fff", background: listening ? "linear-gradient(135deg, #C07070, #A05050)" : "linear-gradient(135deg, #9B7FB8, #7A5AB8)", boxShadow: listening ? "0 0 0 5px #C0707040" : "0 3px 12px #9B7FB840", transition: "all 0.2s", animation: listening ? "speakPulse 1s ease-in-out infinite" : "none" }}>
+                      {listening ? "⏹ Stop" : "🎤 Start Speaking"}
+                    </button>
+                  )}
+                </div>
+
+                {/* Waveform animation */}
+                {listening && (
+                  <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+                    {[0,1,2,3,4].map(j => (
+                      <div key={j} style={{ width: 4, borderRadius: 2, background: "#9B7FB8", animation: "waveBar 0.8s ease-in-out infinite", animationDelay: `${j * 0.1}s`, height: `${10 + Math.random() * 16}px` }} />
+                    ))}
+                    <span style={{ fontSize: 13, color: "#7A5AB8", marginLeft: 6 }}>Listening…</span>
+                  </div>
+                )}
+
+                {/* Live transcript */}
+                {(transcript || listening) && (
+                  <div style={{ background: "#F8F5FF", borderRadius: 10, padding: "12px 16px", border: "2px solid #D0C8E8", marginBottom: 14, fontSize: 17, color: "#2D3B36", fontStyle: transcript ? "normal" : "italic", lineHeight: 1.5, textAlign: "left" }}>
+                    {transcript || <span style={{ color: "#bbb" }}>Waiting for speech…</span>}
+                  </div>
+                )}
+
+                {/* SR result */}
+                {srResult && srResult.phrase === current && (
+                  <div style={{ borderRadius: 12, padding: "14px 18px", marginBottom: 14, background: matchColors[srResult.match] + "18", border: `2px solid ${matchColors[srResult.match]}40`, textAlign: "left" }}>
+                    <div style={{ fontWeight: 700, color: matchColors[srResult.match], fontSize: 16, marginBottom: 6 }}>{matchLabels[srResult.match]}</div>
+                    {srResult.heard && <div style={{ fontSize: 14, color: "#555" }}><span style={{ color: "#888" }}>You said: </span>"{srResult.heard}"</div>}
+                    {srResult.match !== "denied" && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+                        <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#E8E0D0", overflow: "hidden" }}>
+                          <div style={{ width: `${srResult.score}%`, height: "100%", background: matchColors[srResult.match], borderRadius: 4, transition: "width 0.5s ease" }} />
+                        </div>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: matchColors[srResult.match], minWidth: 36 }}>{srResult.score}%</span>
+                      </div>
+                    )}
+                    <button onClick={() => { setTranscript(""); setSrResult(null); }}
+                      style={{ marginTop: 10, padding: "8px 16px", background: "#F5F0E8", border: "2px solid #D5CFC4", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#666" }}>Try again</button>
+                  </div>
+                )}
+
+                {/* Rating buttons */}
+                <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                  <Btn color="#4E8B80" onClick={() => record("correct")}>✓ Said it correctly</Btn>
+                  <Btn color="#D4A843" onClick={() => record("partial")}>〜 Close / partial</Btn>
+                  <Btn color="#C07070" onClick={() => record("incorrect")}>✗ Could not repeat</Btn>
+                </div>
+              </>
             )}
           </>
         ) : (
@@ -298,6 +468,11 @@ export default function RepetitionModule({ addToLog }) {
           </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes speakPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+        @keyframes waveBar { 0%, 100% { transform: scaleY(0.4); opacity: 0.5; } 50% { transform: scaleY(1.2); opacity: 1; } }
+      `}</style>
 
       <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
         {[["✓ Correct", "#4E8B80", score.correct], ["〜 Partial", "#D4A843", score.partial], ["✗ Difficulty", "#C07070", score.incorrect]].map(([l, c, v]) => (
