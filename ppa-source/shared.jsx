@@ -90,13 +90,35 @@ export function Btn({ color, onClick, children }) {
 // imgStyle / spanStyle are merged into the respective display element's style.
 export function ZoomableGraphic({ graphic, alt = "", width, height, fontSize, imgStyle = {}, spanStyle = {} }) {
   const [zoomed, setZoomed] = useState(false);
+  const [zoomScale, setZoomScale] = useState(1);
   const isImg = isImageGraphic(graphic);
+
   useEffect(() => {
     if (!zoomed) return;
-    const onKey = e => { if (e.key === "Escape") setZoomed(false); };
+    const onKey = e => { if (e.key === "Escape") { setZoomed(false); setZoomScale(1); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [zoomed]);
+
+  const handleDragStart = e => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startScale = zoomScale;
+    const onMove = ev => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      setZoomScale(Math.max(0.5, startScale + (dx + dy) / 200));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   return (
     <>
       <span
@@ -110,7 +132,7 @@ export function ZoomableGraphic({ graphic, alt = "", width, height, fontSize, im
       </span>
       {zoomed && (
         <div
-          onClick={() => setZoomed(false)}
+          onClick={() => { setZoomed(false); setZoomScale(1); }}
           style={{
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -120,24 +142,56 @@ export function ZoomableGraphic({ graphic, alt = "", width, height, fontSize, im
           <div
             onClick={e => e.stopPropagation()}
             style={{
+              position: "relative",
               background: "#fff", borderRadius: 20, border: "3px solid #D5CFC4",
               padding: 24, display: "flex", alignItems: "center", justifyContent: "center",
               cursor: "default", boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
             }}
           >
+            {/* + / − zoom controls */}
+            <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 4, zIndex: 1 }}>
+              <button
+                onClick={() => setZoomScale(s => Math.max(0.5, s - 0.25))}
+                style={{ width: 30, height: 30, borderRadius: "50%", border: "1px solid #ccc",
+                  background: "#f5f5f5", cursor: "pointer", fontSize: 20, fontWeight: 700,
+                  display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
+                −
+              </button>
+              <button
+                onClick={() => setZoomScale(s => s + 0.25)}
+                style={{ width: 30, height: 30, borderRadius: "50%", border: "1px solid #ccc",
+                  background: "#f5f5f5", cursor: "pointer", fontSize: 20, fontWeight: 700,
+                  display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
+                +
+              </button>
+            </div>
+
             {isImg
               ? <img
                   src={graphic} alt={alt}
                   style={{
-                    width: width * 2, height: height * 2,
-                    maxWidth: "calc(90vw - 48px)", maxHeight: "calc(90vh - 48px)",
+                    width: width * 2 * zoomScale,
+                    height: height * 2 * zoomScale,
+                    maxWidth: "calc(90vw - 48px)",
+                    maxHeight: "calc(90vh - 48px)",
                     objectFit: "contain",
                   }}
                 />
-              : <span style={{ fontSize: fontSize * 2, lineHeight: 1 }}>{graphic}</span>
+              : <span style={{ fontSize: fontSize * 2 * zoomScale, lineHeight: 1 }}>{graphic}</span>
             }
+
+            {/* Corner drag handle — drag toward bottom-right to zoom in */}
+            <div
+              onPointerDown={handleDragStart}
+              title="Drag to resize"
+              style={{
+                position: "absolute", bottom: 8, right: 8,
+                width: 18, height: 18, cursor: "nwse-resize",
+                borderRight: "3px solid #B0A898", borderBottom: "3px solid #B0A898",
+                borderRadius: "0 0 6px 0",
+              }}
+            />
           </div>
-          }
         </div>
       )}
     </>

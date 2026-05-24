@@ -328,7 +328,7 @@ def build_user_guide(path):
         "and their speech-language pathologists and caregivers.",
         ST['cover_tagline']))
     story.append(Spacer(1, 0.4*cm))
-    story.append(Paragraph("Version 4  •  March 2026", ST['cover_version']))
+    story.append(Paragraph("Version 4.0.2  •  May 2026", ST['cover_version']))
     story.append(PageBreak())
 
     # ── PAGE 2 — INTRODUCTION ─────────────────────────────────────────────────
@@ -343,13 +343,13 @@ def build_user_guide(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(
-        "The suite provides nine structured practice modules, plus an AI therapist assistant "
+        "The suite provides eleven structured practice modules, plus an AI therapist assistant "
         "(Dr. Aria, powered by Claude), progress tracking, and export/import tools for "
         "therapist-customised content.",
         ST['normal']))
     story.append(Spacer(1, 0.3*cm))
 
-    story.append(Paragraph("Nine Modules at a Glance", ST['subsection']))
+    story.append(Paragraph("Modules at a Glance", ST['subsection']))
     story.append(Spacer(1, 0.1*cm))
     modules_table = make_table(
         ["Module", "Purpose"],
@@ -362,6 +362,8 @@ def build_user_guide(path):
             ["Sentence Builder", "Drag-and-drop sentence construction"],
             ["Sentence Work", "Sentence completion and construction prompts"],
             ["Video Questions", "Comprehension questions on short video clips"],
+            ["Family &amp; Friends", "Graph-based family tree with personalised relationship labels"],
+            ["Memory", "Multiple-choice memory questions drawn from family facts"],
             ["Progress", "Session history, accuracy trends, and SR statistics"],
         ],
         col_widths=[7*cm, CONTENT_W - 7*cm]
@@ -599,15 +601,23 @@ def build_user_guide(path):
         ST['normal']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "When the patient types their answer, tap <b>Got it!</b> to record a correct response "
-        "and get Dr. Aria's feedback, or use the cue buttons if more support is needed. "
+        "When the patient types their answer, tap <b>Got it!</b> — or press <b>Enter / Return</b> "
+        "— to record a correct response and get Dr. Aria's feedback. Pressing Enter also works "
+        "in the Semantic Cue and Phonemic Cue input phases. "
         "Tap <b>Next word →</b> after Dr. Aria responds (or immediately if AI is not connected).",
         ST['normal']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "Tap the picture card graphic to enlarge it to twice its size — useful if the image "
-        "is small or the patient needs a closer look. Tap outside the enlarged image or press "
-        "<b>Escape</b> to dismiss it.",
+        "<b>Keyboard navigation:</b> press <b>Tab</b> to move between the practice buttons. "
+        "The currently focused button is highlighted with a coloured ring. Pressing "
+        "<b>Enter</b> while a button is focused activates it.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "Tap the picture card graphic to enlarge it — useful if the image is small or the "
+        "patient needs a closer look. Inside the zoom overlay: tap <b>+</b> or <b>−</b> to "
+        "increase or decrease the size; drag the bottom-right corner handle to resize freely. "
+        "Tap outside the image or press <b>Escape</b> to dismiss the overlay.",
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
@@ -731,6 +741,51 @@ def build_user_guide(path):
     story.append(Paragraph("• Tap <b>Submit</b> to record your answer.", ST['bullet']))
     story.append(Paragraph("• Tap <b>Next question</b> to continue.", ST['bullet']))
     story.append(PageBreak())
+
+    # ── FAMILY & FRIENDS ──────────────────────────────────────────────────────
+    story.append(section_rule())
+    story.append(Paragraph("Family &amp; Friends", ST['section']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "Build a family tree that personalises memory and naming exercises. "
+        "The module stores people and their direct relationships — parent, partner, or sibling — "
+        "and automatically derives all other labels (grandparent, aunt/uncle, cousin, etc.) "
+        "so you never need to enter them manually.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("• Tap <b>+ Add</b> to add a person. Enter their name and optionally a photo URL.", ST['bullet']))
+    story.append(Paragraph(
+        "• Under <b>Relationships</b>, choose the direction (parent of / child of / partner of / sibling of) "
+        "and select the other person. Add as many links as needed.",
+        ST['bullet']))
+    story.append(Paragraph("• Under <b>Facts</b>, add items like birthday, job, or favourite colour — these are used by the Memory module.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>🌳 Tree</b> to switch to the family tree view. The patient node (You) always appears at the centre.", ST['bullet']))
+    story.append(Paragraph("• Teal lines show parent–child connections; rose double-lines show partners; dashed lines show siblings when no shared parent is recorded.", ST['bullet']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "<b>Sticky default:</b> when adding a new person, the \"related to\" selector starts on "
+        "You (the patient). Once you change it to another person, that person becomes the new "
+        "default for subsequent additions — useful when adding several members of one branch "
+        "of the family.",
+        ST['normal']))
+    story.append(Spacer(1, 0.25*cm))
+
+    # ── MEMORY ────────────────────────────────────────────────────────────────
+    story.append(section_rule())
+    story.append(Paragraph("Memory", ST['section']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "The Memory module generates multiple-choice questions from the facts you have entered "
+        "for family members and friends. For example, if Gran's birthday is recorded as "
+        "\"12 March 1942\", the module might ask \"When is Gran's birthday?\" with four "
+        "realistic options.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("• Up to 8 questions per session, cycling through all family members with facts.", ST['bullet']))
+    story.append(Paragraph("• Wrong-answer distractors are drawn from other family members' facts, making the task meaningfully challenging.", ST['bullet']))
+    story.append(Paragraph("• Questions become harder (fewer obvious distractors) as accuracy improves.", ST['bullet']))
+    story.append(Paragraph("• Add more facts in Family &amp; Friends to increase the variety of questions.", ST['bullet']))
+    story.append(Spacer(1, 0.25*cm))
 
     # ── PAGE 8 — PROGRESS ─────────────────────────────────────────────────────
     story.append(section_rule())
@@ -924,7 +979,7 @@ def build_user_guide(path):
     story.append(Spacer(1, 0.5*cm))
 
     story.append(Paragraph(
-        "PPA Speech Therapy Suite  •  Version 4  •  March 2026  •  "
+        "PPA Speech Therapy Suite  •  Version 4.0.2  •  May 2026  •  "
         "Designed for use under the supervision of a speech-language pathologist.",
         ST['footer']))
 
@@ -981,7 +1036,7 @@ def build_tech_ref(path):
     story.append(Spacer(1, 0.3*cm))
     story.append(Paragraph("Technical Reference Documentation", ST['cover_subtitle']))
     story.append(Spacer(1, 0.5*cm))
-    story.append(Paragraph("Version 4  (March 2026)", ST['cover_version']))
+    story.append(Paragraph("Version 4.0.2  (May 2026)", ST['cover_version']))
     story.append(Spacer(1, 0.3*cm))
     story.append(Paragraph(
         "Single-file React application for Primary Progressive Aphasia (PPA) speech therapy.",
@@ -1104,11 +1159,17 @@ def build_tech_ref(path):
     story.append(Paragraph("2.4  <ZoomableGraphic />", ST['subsection']))
     story.append(Paragraph(
         "Wraps any graphic (emoji or image) and makes it clickable. On click, a full-screen "
-        "modal overlay opens showing the graphic at twice its normal display size, with a white "
-        "background and border. The overlay closes when the user clicks outside the graphic "
-        "or presses <b>Escape</b>. The ESC listener is registered only while the overlay is "
-        "open and is cleaned up on close.",
+        "modal overlay opens. Inside the overlay:",
         ST['normal']))
+    story.append(Spacer(1, 0.05*cm))
+    story.append(Paragraph("•  <b>+ / −</b> buttons (top-right corner) increment or decrement <code>zoomScale</code> by 0.25 (minimum 0.5).", ST['bullet']))
+    story.append(Paragraph(
+        "•  <b>Corner drag handle</b> (bottom-right, L-shaped border, <code>nwse-resize</code> cursor) — "
+        "pointer events on the handle update <code>zoomScale</code> continuously as the pointer moves: "
+        "<code>scale += (dx + dy) / 200</code>.",
+        ST['bullet']))
+    story.append(Paragraph("•  Image display size is <code>width * 2 * zoomScale</code> × <code>height * 2 * zoomScale</code>, capped at 90 vw / 90 vh.", ST['bullet']))
+    story.append(Paragraph("•  Pressing <b>Escape</b> or clicking outside the card closes the overlay and resets <code>zoomScale</code> to 1.", ST['bullet']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
         "Props: <code>graphic</code> (string — emoji or image src), <code>alt</code> (string), "
@@ -1143,6 +1204,9 @@ def build_tech_ref(path):
             ["ppa_sentences", "Custom sentence tasks (JSON array)"],
             ["ppa_video_clips", "Custom video clips (JSON array)"],
             ["ppa_assessment", "Custom assessment tasks (JSON array)"],
+            ["fam_persons", "Family graph — array of person objects {id, name, photo_url, facts}"],
+            ["fam_relationships", "Family graph — array of edge objects {id, from, to, type, lineage}"],
+            ["fam_profile", "Patient profile {name, conditionType, …} — shared with ProfileModule"],
         ],
         col_widths=[5.5*cm, CONTENT_W - 5.5*cm]
     )
@@ -1214,9 +1278,9 @@ def build_tech_ref(path):
     phases_table = make_table(
         ["Phase", "Display", "Transitions"],
         [
-            ["show", "Graphic + empty input", "Space → phoneme hint; Semantic Cue btn → semantic; type + Got it! → record correct"],
-            ["semantic", "Semantic cue text shown", "Phonemic Cue btn → phonemic"],
-            ["phonemic", "Phonemic cue shown", "Reveal btn → answer"],
+            ["show", "Graphic + empty input", "Space → phoneme hint; Got it! or Enter → record correct; Semantic Cue btn → semantic"],
+            ["semantic", "Semantic cue text shown", "Got it! or Enter → record semantic_cued; Phonemic Cue btn → phonemic"],
+            ["phonemic", "Phonemic cue shown", "Got it! or Enter → record phonemic_cued; Reveal btn → answer"],
             ["answer", "Full word shown", "Next word → advance"],
         ],
         col_widths=[2.5*cm, 5*cm, CONTENT_W - 7.5*cm]
@@ -1577,9 +1641,102 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(PageBreak())
 
-    # ── SECTION 8 — PROGRESS MODULE ───────────────────────────────────────────
+    # ── SECTION 8 — FAMILY MODULE ─────────────────────────────────────────────
     story.append(section_rule())
-    story.append(Paragraph("8.  Progress Module", ST['section']))
+    story.append(Paragraph("8.  Family Module (FamilyModule.jsx)", ST['section']))
+    story.append(Spacer(1, 0.1*cm))
+
+    story.append(Paragraph("8.1  Graph Data Model", ST['subsection']))
+    story.append(Paragraph(
+        "The family data is stored as a property graph in two localStorage keys: "
+        "<code>fam_persons</code> and <code>fam_relationships</code>. "
+        "Only <i>direct</i> relationship types are stored as edges — "
+        "parent, partner, and sibling. All other labels (grandparent, grandchild, "
+        "aunt/uncle, cousin, etc.) are derived at render time via BFS traversal.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+
+    rel_table = make_table(
+        ["Stored type", "Edge direction", "Lineage variants"],
+        [
+            ["parent", "from: parent, to: child", "biological · step · adopted · guardian · half"],
+            ["partner", "symmetric (from/to both stored)", "biological (default)"],
+            ["sibling", "symmetric (from/to both stored)", "biological · half"],
+        ],
+        col_widths=[3*cm, 5.5*cm, CONTENT_W - 8.5*cm]
+    )
+    story.append(rel_table)
+    story.append(Spacer(1, 0.15*cm))
+
+    story.append(Paragraph("8.2  BFS Relationship Derivation", ST['subsection']))
+    story.append(Paragraph(
+        "<code>deriveLabel(personId, relationships)</code> runs a BFS from the special "
+        "<code>_patient</code> node to <code>personId</code> and collects a path of "
+        "directional steps. <code>pathToLabel(path)</code> maps the step sequence to a "
+        "human-readable string:",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    derive_table = make_table(
+        ["Path pattern", "Label"],
+        [
+            ["up", "parent"],
+            ["down", "child"],
+            ["side (partner)", "partner"],
+            ["side (sibling)", "sibling"],
+            ["up, up", "grandparent"],
+            ["down, down", "grandchild"],
+            ["up, down", "sibling (via shared parent)"],
+            ["up, up, down", "aunt / uncle"],
+            ["up, down, down", "niece / nephew"],
+            ["up, up, up", "great-grandparent"],
+            ["up, up, down, down", "cousin"],
+        ],
+        col_widths=[5.5*cm, CONTENT_W - 5.5*cm]
+    )
+    story.append(derive_table)
+    story.append(Spacer(1, 0.15*cm))
+
+    story.append(Paragraph("8.3  Tree Layout", ST['subsection']))
+    story.append(Paragraph(
+        "<code>buildTreeLayout(persons, relationships)</code> assigns generation numbers via "
+        "BFS from <code>_patient</code> (parent edges = ±1, partner/sibling = 0), then "
+        "positions each generation as a horizontal row. The patient node is always at the "
+        "horizontal centre of the SVG. Gen-0 (same generation as patient) is ordered: "
+        "siblings | patient | partners | others.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "<code>buildLines(persons, relationships, positions)</code> draws three line types:",
+        ST['normal']))
+    story.append(Spacer(1, 0.05*cm))
+    story.append(Paragraph(
+        "•  <b>Teal pedigree bars</b> — children sharing the same parent set share a single "
+        "horizontal bar with vertical drops (no false sibling connections).",
+        ST['bullet']))
+    story.append(Paragraph(
+        "•  <b>Rose double-lines</b> (stroke #B05090) — one line at y−3 and y+3 for each "
+        "partner pair; drawn once per pair via a <code>drawnPairs</code> Set.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "•  <b>Dashed teal lines</b> — siblings only when no shared parent is already in "
+        "the graph (avoids duplication with bar lines).",
+        ST['bullet']))
+    story.append(Spacer(1, 0.15*cm))
+
+    story.append(Paragraph("8.4  Legacy Migration", ST['subsection']))
+    story.append(Paragraph(
+        "On first load, <code>loadFamilyMembers()</code> checks for the old "
+        "<code>fam_family_members</code> key. If found, <code>migrateLegacy()</code> converts "
+        "each record: <code>parent</code> → parent edge to patient; <code>child</code> → parent "
+        "edge from patient; <code>partner</code> / <code>sibling</code> → symmetric edges. "
+        "Derived types (grandparent, cousin, etc.) become persons with no edges — the user "
+        "must add the intermediate links manually. The legacy key is then removed.",
+        ST['normal']))
+    story.append(PageBreak())
+
+    # ── SECTION 9 — PROGRESS MODULE ───────────────────────────────────────────
+    story.append(section_rule())
+    story.append(Paragraph("9.  Progress Module", ST['section']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
         "Reads from the session log (<code>ppa_session_log</code>) and the SR state "
@@ -1598,7 +1755,7 @@ def build_tech_ref(path):
 
     # ── SECTION 9 — CONFIGURATION ─────────────────────────────────────────────
     story.append(section_rule())
-    story.append(Paragraph("9.  Configuration (data/config.js)", ST['section']))
+    story.append(Paragraph("10.  Configuration (data/config.js)", ST['section']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
         "<code>config.js</code> exports two constants:",
@@ -1614,7 +1771,7 @@ def build_tech_ref(path):
         ST['bullet']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("9.1  Environment Variable", ST['subsection']))
+    story.append(Paragraph("10.1  Environment Variable", ST['subsection']))
     story.append(Paragraph(
         "The Anthropic API key is read from <code>import.meta.env.VITE_ANTHROPIC_API_KEY</code>. "
         "Create a <code>.env</code> file in the repo root:",
@@ -1630,10 +1787,10 @@ def build_tech_ref(path):
 
     # ── SECTION 10 — IMPLEMENTATION NOTES ────────────────────────────────────
     story.append(section_rule())
-    story.append(Paragraph("10.  Implementation Notes", ST['section']))
+    story.append(Paragraph("11.  Implementation Notes", ST['section']))
     story.append(Spacer(1, 0.1*cm))
 
-    story.append(Paragraph("10.1  React StrictMode", ST['subsection']))
+    story.append(Paragraph("11.1  React StrictMode", ST['subsection']))
     story.append(Paragraph(
         "StrictMode is active in development (<code>src/main.jsx</code>). Effects run twice. "
         "All <code>useEffect</code> hooks must return a cleanup function. "
@@ -1641,7 +1798,7 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("10.2  No Backend — Security Considerations", ST['subsection']))
+    story.append(Paragraph("11.2  No Backend — Security Considerations", ST['subsection']))
     story.append(Paragraph(
         "The API key is stored in browser localStorage (or .env for Vite builds). "
         "This is acceptable for a single-patient, single-device use case but is not suitable "
@@ -1650,7 +1807,7 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("10.3  CORS — anthropic-dangerous-direct-browser-access", ST['subsection']))
+    story.append(Paragraph("11.3  CORS — anthropic-dangerous-direct-browser-access", ST['subsection']))
     story.append(Paragraph(
         "Anthropic's API requires the header "
         "<code>anthropic-dangerous-direct-browser-access: true</code> for direct browser "
@@ -1658,7 +1815,7 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("10.4  Admin PIN", ST['subsection']))
+    story.append(Paragraph("11.4  Admin PIN", ST['subsection']))
     story.append(Paragraph(
         "The PIN is defined as a constant in <code>NamingModule.jsx</code> "
         "(<code>const ADMIN_PIN = \"1234\"</code>). Change this before clinical deployment. "
@@ -1666,7 +1823,7 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("10.5  PWA / Service Worker", ST['subsection']))
+    story.append(Paragraph("11.5  PWA / Service Worker", ST['subsection']))
     story.append(Paragraph(
         "The <code>pwa/</code> directory contains a <code>manifest.json</code> and a "
         "<code>service-worker.js</code> that cache the app shell for offline use. "
@@ -1675,7 +1832,7 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("10.6  localStorage Limits", ST['subsection']))
+    story.append(Paragraph("11.6  localStorage Limits", ST['subsection']))
     story.append(Paragraph(
         "Most browsers allow 5–10 MB of localStorage per origin. "
         "Base64-encoded photos in the dictionary are the largest consumers. "
@@ -1684,7 +1841,7 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("10.7  Bundle Size", ST['subsection']))
+    story.append(Paragraph("11.7  Bundle Size", ST['subsection']))
     story.append(Paragraph(
         "The Vite build produces a single JS bundle. The meSpeak library (eSpeak WASM) "
         "adds ~1.5 MB to the bundle. This is acceptable for a local/LAN deployment but "
@@ -1693,7 +1850,7 @@ def build_tech_ref(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("10.8  Audio Hints — Vowel Anchoring Approach", ST['subsection']))
+    story.append(Paragraph("11.8  Audio Hints — Vowel Anchoring Approach", ST['subsection']))
     story.append(Paragraph(
         "The initial approach used <code>phonemizer</code> (Xenova, eSpeak-NG WASM) to convert "
         "each word to IPA, map IPA tokens to eSpeak X-SAMPA notation, and call "
@@ -1721,10 +1878,10 @@ def build_tech_ref(path):
 
     # ── SECTION 11 — INSTALLER / DISTRIBUTION ────────────────────────────────
     story.append(section_rule())
-    story.append(Paragraph("11.  Installer / Distribution", ST['section']))
+    story.append(Paragraph("12.  Installer / Distribution", ST['section']))
     story.append(Spacer(1, 0.1*cm))
 
-    story.append(Paragraph("11.1  macOS Installer (installer/install.sh)", ST['subsection']))
+    story.append(Paragraph("12.1  macOS Installer (installer/install.sh)", ST['subsection']))
     story.append(Paragraph(
         "A shell script that:",
         ST['normal']))
@@ -1736,14 +1893,14 @@ def build_tech_ref(path):
     story.append(Paragraph("• Launches the Vite dev server.", ST['bullet']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("11.2  Windows Installer (win-installer/install.ps1)", ST['subsection']))
+    story.append(Paragraph("12.2  Windows Installer (win-installer/install.ps1)", ST['subsection']))
     story.append(Paragraph(
         "A PowerShell script performing the same steps as the macOS installer, "
         "adapted for Windows paths and conventions.",
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("11.3  Claude.ai Artifact", ST['subsection']))
+    story.append(Paragraph("12.3  Claude.ai Artifact", ST['subsection']))
     story.append(Paragraph(
         "The bundle files (<code>ppa-speech-therapy-bundle.jsx</code>) in each installer "
         "directory are single-file versions of the app suitable for pasting into a "
@@ -1753,8 +1910,17 @@ def build_tech_ref(path):
 
     # ── SECTION 12 — CHANGELOG ────────────────────────────────────────────────
     story.append(section_rule())
-    story.append(Paragraph("12.  Changelog", ST['section']))
+    story.append(Paragraph("13.  Changelog", ST['section']))
     story.append(Spacer(1, 0.1*cm))
+
+    story.append(Paragraph("Version 4.0.2  (May 2026)", ST['subsection']))
+    story.append(Paragraph("• FamilyModule: replaced flat <code>relation_type</code> with a proper graph model (<code>fam_persons</code> + <code>fam_relationships</code>). Direct edges only (parent / partner / sibling); all other labels derived by BFS at render time.", ST['bullet']))
+    story.append(Paragraph("• Family tree SVG: patient centred horizontally; teal pedigree bars for parent–child groups; rose double-lines for partners; dashed teal for siblings with no recorded shared parent.", ST['bullet']))
+    story.append(Paragraph("• PersonForm: multi-link editing with sticky \"related to\" default; automatic migration from legacy <code>fam_family_members</code> key.", ST['bullet']))
+    story.append(Paragraph("• NamingModule: Enter / Return in the answer input fires Got it! across all three practice phases.", ST['bullet']))
+    story.append(Paragraph("• NamingModule: practice buttons gain a visible focus ring for keyboard tab-navigation.", ST['bullet']))
+    story.append(Paragraph("• ZoomableGraphic: +/− buttons and bottom-right corner drag handle for free-form resize in the zoom overlay.", ST['bullet']))
+    story.append(Spacer(1, 0.2*cm))
 
     story.append(Paragraph("Version 4.0.1  (March 2026)", ST['subsection']))
     story.append(Paragraph("• Added click-to-zoom for graphics: tapping any picture card in Naming Practice or Assessment opens a 2× popup. Press Escape or click outside to close.", ST['bullet']))
@@ -1777,7 +1943,7 @@ def build_tech_ref(path):
     story.append(thin_rule())
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "PPA Speech Therapy Suite  •  Version 4  •  March 2026  •  Technical Reference",
+        "PPA Speech Therapy Suite  •  Version 4.0.2  •  May 2026  •  Technical Reference",
         ST['footer']))
 
     doc.build(story, onFirstPage=on_first, onLaterPages=on_later)

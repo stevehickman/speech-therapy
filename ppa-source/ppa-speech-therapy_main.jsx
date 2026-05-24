@@ -268,7 +268,7 @@ export default function App() {
   const ActiveModule = {
     therapist:        <TherapistModule sessionLog={sessionLog} addToLog={addToLog} />,
     naming:           <NamingModule addToLog={addToLog} contentItems={contentItems} />,
-    memory:           <MemoryModule members={familyMembers} addToLog={addToLog} />,
+    memory:           <MemoryModule members={familyMembers.persons ?? []} addToLog={addToLog} />,
     assessment:       <AssessmentModule addToLog={addToLog} />,
     repetition:       <RepetitionModule addToLog={addToLog} />,
     sentence:         <SentenceModule addToLog={addToLog} />,
