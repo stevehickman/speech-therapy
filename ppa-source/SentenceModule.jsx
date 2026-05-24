@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { SENTENCE_COMPLETIONS, SENTENCE_CONSTRUCTIONS } from "./data/sentenceTasks.js";
 import {
   PPA_EXT,
@@ -132,6 +132,37 @@ export default function SentenceModule({ addToLog }) {
   };
 
   const next = () => { setTaskIdx(i => i + 1); setInput(""); setFeedback(""); setPendingAI(null); };
+
+  // ── textarea ref + word-insertion helpers ───────────────────────────────────
+  const textareaRef = useRef(null);
+
+  const insertWordAtCursor = (word) => {
+    const el = textareaRef.current;
+    if (!el) {
+      setInput(v => v + (v.length > 0 && !v.endsWith(" ") ? " " : "") + word + " ");
+      return;
+    }
+    const start = el.selectionStart ?? input.length;
+    const end   = el.selectionEnd   ?? input.length;
+    const before = input.slice(0, start);
+    const after  = input.slice(end);
+    const spaceBefore = before.length > 0 && !before.endsWith(" ") ? " " : "";
+    const spaceAfter  = after.length  > 0 && !after.startsWith(" ") ? " " : " ";
+    const inserted = spaceBefore + word + spaceAfter;
+    const newInput = before + inserted + after;
+    const newCursor = start + inserted.length;
+    setInput(newInput);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(newCursor, newCursor); });
+  };
+
+  const deleteLastWord = () => {
+    setInput(v => {
+      const trimmed = v.trimEnd();
+      const lastSpace = trimmed.lastIndexOf(" ");
+      return lastSpace === -1 ? "" : trimmed.slice(0, lastSpace + 1);
+    });
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
 
   // ── admin helpers — completions ─────────────────────────────────────────────
   const addCompletion = () => {
@@ -412,20 +443,35 @@ export default function SentenceModule({ addToLog }) {
         ) : (
           <>
             <div style={{ fontSize: 13, color: "#999", letterSpacing: 2, textTransform: "uppercase", marginBottom: 14 }}>Make a sentence using these words</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
               {(task.words || []).map((w, i) => (
-                <span key={i} style={{ padding: "6px 14px", background: "#E8F4F2", borderRadius: 20, fontSize: 16, color: "#4E8B80", fontWeight: 600, border: "1px solid #B0D4CE" }}>{w}</span>
+                <button key={i} onClick={() => insertWordAtCursor(w)}
+                  title={`Insert "${w}"`}
+                  style={{ padding: "6px 14px", background: "#E8F4F2", borderRadius: 20, fontSize: 16, color: "#4E8B80", fontWeight: 600, border: "1px solid #B0D4CE", cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}
+                  onMouseOver={e => { e.currentTarget.style.background = "#4E8B80"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#4E8B80"; }}
+                  onMouseOut={e => { e.currentTarget.style.background = "#E8F4F2"; e.currentTarget.style.color = "#4E8B80"; e.currentTarget.style.borderColor = "#B0D4CE"; }}>
+                  {w}
+                </button>
               ))}
             </div>
+            <div style={{ fontSize: 12, color: "#999", marginBottom: 10 }}>Tap a word to insert it</div>
             <div style={{ fontSize: 13, color: "#9B7FB8", marginBottom: 16 }}>Hint: {task.hint}</div>
           </>
         )}
 
-        <textarea value={input} onChange={e => setInput(e.target.value)}
+        <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
           placeholder="Type your sentence here..."
           style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "2px solid #D5CFC4", fontSize: 17, resize: "none", minHeight: 80, background: "#FFFDF9", color: "#2D3B36", outline: "none", lineHeight: 1.5, fontFamily: "inherit" }}
           rows={3}
         />
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+          <button onClick={deleteLastWord} title="Delete last word"
+            style={{ padding: "6px 14px", borderRadius: 10, border: "2px solid #D5CFC4", background: "#FFFDF9", color: "#888", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, transition: "all 0.15s" }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = "#C07070"; e.currentTarget.style.color = "#C07070"; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = "#D5CFC4"; e.currentTarget.style.color = "#888"; }}>
+            ⌫ Delete word
+          </button>
+        </div>
 
         {!feedback && (
           <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
