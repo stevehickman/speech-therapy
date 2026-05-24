@@ -271,7 +271,7 @@ export default function App() {
     memory:           <MemoryModule members={familyMembers.persons ?? []} addToLog={addToLog} />,
     assessment:       <AssessmentModule addToLog={addToLog} />,
     repetition:       <RepetitionModule addToLog={addToLog} />,
-    sentence:         <SentenceModule addToLog={addToLog} />,
+    sentence:         <SentenceModule addToLog={addToLog} conditionType={conditionType} />,
     scripts:          <ScriptsModule />,
     sentence_builder: <SentenceBuilderModule addToLog={addToLog} />,
     video:            <VideoModule addToLog={addToLog} conditionType={conditionType} />,
