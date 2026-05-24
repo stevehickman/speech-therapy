@@ -350,7 +350,9 @@ function FamilyTree({ persons, relationships }) {
   const lines = buildLines(persons, relationships, positions);
 
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div>
+      {/* Scroll container — scrollbars appear automatically in both directions when tree overflows */}
+      <div style={{ overflow: "auto", maxHeight: "60vh", border: "1px solid #E8E0D0", borderRadius: 10 }}>
       <svg width={svgW} height={svgH} style={{ display: "block", margin: "0 auto" }}>
         <defs>
           {allPersons.map(m => m.photo_url && positions[m.id] && (
@@ -399,6 +401,7 @@ function FamilyTree({ persons, relationships }) {
           );
         })}
       </svg>
+      </div>
 
       <div style={{ display: "flex", gap: 20, justifyContent: "center", marginTop: 10, fontSize: 11, color: "#888", flexWrap: "wrap" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
