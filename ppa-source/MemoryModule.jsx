@@ -125,17 +125,60 @@ function getFactDistractors(key, correctValue, quality, count = 3) {
   return picked;
 }
 
+// Choose the right question wording based on fact type.
+// Uses the detected category plus a key-pattern check so that
+// "where"-type and "when"-type facts never get a "What" question.
+function buildQuestionText(name, factKey, factValue) {
+  const k        = factKey.toLowerCase().replace(/[_\s\-]+/g, "");
+  const category = detectFactCategory(factKey, factValue);
+  const label    = factKey.replace(/_/g, " ");
+  const isBirthKey = /birth|dob|born|bday/.test(k);
+
+  // Key-specific overrides (highest priority)
+  if (/whereme?t|firstme?t/.test(k)) return `Where did you first meet ${name}?`;
+
+  switch (category) {
+    // ── Where questions ───────────────────────────────────────────────────
+    case "lives_in":
+      return `Where does ${name} live?`;
+
+    // ── When / birthday questions ─────────────────────────────────────────
+    case "birthday_full":
+      return `When is ${name}'s birthday?`;
+    case "month":
+      return isBirthKey
+        ? `What month was ${name} born?`
+        : `What is ${name}'s ${label}?`;
+    case "year":
+      return isBirthKey
+        ? `What year was ${name} born?`
+        : `What is ${name}'s ${label}?`;
+    case "day":
+      return isBirthKey
+        ? `What day was ${name} born?`
+        : `What is ${name}'s ${label}?`;
+
+    // ── What questions ────────────────────────────────────────────────────
+    case "hobby":   return `What is ${name}'s hobby?`;
+    case "colour":  return `What is ${name}'s favourite colour?`;
+    case "food":    return `What is ${name}'s favourite food?`;
+    case "pet":     return `What pet does ${name} have?`;
+    case "job":     return `What is ${name}'s job?`;
+
+    default:        return `What is ${name}'s ${label}?`;
+  }
+}
+
 // Build a question from a family member + one of their facts
 function buildQuestion(member, factKey, factValue, quality) {
   const distractors = getFactDistractors(factKey, factValue, quality);
   const options = shuffle([factValue, ...distractors.slice(0, 3)]);
-  const questionLabel = factKey.replace(/_/g, " ");
   return {
-    memberId:  member.id,
-    memberName: member.name,
+    memberId:      member.id,
+    memberName:    member.name,
     factKey,
     factValue,
-    question: `What is ${member.name}'s ${questionLabel}?`,
+    question:      buildQuestionText(member.name, factKey, factValue),
     options,
     correctAnswer: factValue,
   };
