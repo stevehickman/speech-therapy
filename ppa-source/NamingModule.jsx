@@ -1520,6 +1520,7 @@ function Practice({ items, addToLog, srKey = SR_KEY }) {
             )}
             <input value={response} onChange={e => setResponse(e.target.value)}
               onKeyDown={e => {
+                if (e.key === "Enter") { recordResponse(phonemesRevealed > 0 ? "space_cued" : "correct"); return; }
                 if (e.key === " " && response === "") {
                   e.preventDefault();
                   if (phonemesRevealed >= item.word.length) return;
@@ -1586,6 +1587,7 @@ function Practice({ items, addToLog, srKey = SR_KEY }) {
               💡 {item.clue_semantic}
             </div>
             <input value={response} onChange={e => setResponse(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") recordResponse("semantic_cued"); }}
               placeholder="Type the name..."
               style={{ margin: "4px 0 12px", padding: "14px 20px", borderRadius: 12, border: "2px solid #F0E0A0",
                 fontSize: 18, width: "100%", textAlign: "center", background: "#FFFDF9", color: "#2D3B36",
@@ -1605,6 +1607,7 @@ function Practice({ items, addToLog, srKey = SR_KEY }) {
               🔤 {item.clue_phonemic}
             </div>
             <input value={response} onChange={e => setResponse(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") recordResponse("phonemic_cued"); }}
               placeholder="Type the name..."
               style={{ margin: "4px 0 12px", padding: "14px 20px", borderRadius: 12, border: "2px solid #A0C8F0",
                 fontSize: 18, width: "100%", textAlign: "center", background: "#FFFDF9", color: "#2D3B36",
@@ -1635,7 +1638,9 @@ function Practice({ items, addToLog, srKey = SR_KEY }) {
             : <>
                 {aiComment && <div style={{ fontSize: 16, color: "#2D3B36", lineHeight: 1.6, marginBottom: 12 }}>{aiComment}</div>}
                 <button onClick={next}
-                  style={{ marginTop: 4, padding: "10px 20px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 15 }}>
+                  style={{ marginTop: 4, padding: "10px 20px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 15, outline: "none" }}
+                  onFocus={e => { e.currentTarget.style.boxShadow = "0 0 0 3px #fff, 0 0 0 5px #4E8B80"; }}
+                  onBlur={e => { e.currentTarget.style.boxShadow = "none"; }}>
                   Next word →
                 </button>
               </>
@@ -1650,9 +1655,11 @@ function PBtn({ color, onClick, children }) {
   return (
     <button onClick={onClick}
       style={{ padding: "11px 20px", borderRadius: 12, border: "none", cursor: "pointer",
-        background: color, color: "#fff", fontSize: 15, fontWeight: 600 }}
+        background: color, color: "#fff", fontSize: 15, fontWeight: 600, outline: "none" }}
       onMouseOver={e => e.currentTarget.style.opacity = "0.85"}
-      onMouseOut={e => e.currentTarget.style.opacity = "1"}>
+      onMouseOut={e => e.currentTarget.style.opacity = "1"}
+      onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 3px #fff, 0 0 0 5px ${color}`; }}
+      onBlur={e => { e.currentTarget.style.boxShadow = "none"; }}>
       {children}
     </button>
   );
