@@ -258,10 +258,10 @@ $ApiKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
 Write-Host ""   # newline after hidden input
 
 if ([string]::IsNullOrWhiteSpace($ApiKey)) {
-    Write-Warn "No API key entered — you can add it later by editing:"
-    Write-Inf  "  $InstallDir\.env"
-    Write-Inf  "  Replace YOUR_KEY_HERE with your key."
-    $ApiKey = "YOUR_KEY_HERE"
+    Write-Warn "No API key entered — the app will prompt for it on first launch."
+    Write-Inf  "  (The caregiver PIN will be required to enter the key.)"
+    Write-Inf  "  Or edit $InstallDir\.env later and set VITE_ANTHROPIC_API_KEY=sk-ant-..."
+    $ApiKey = ""
 } elseif (-not $ApiKey.StartsWith("sk-ant-")) {
     Write-Warn "Key doesn't look like an Anthropic key — installing anyway."
     Write-Inf  "Edit $InstallDir\.env to correct it if needed."
@@ -322,7 +322,7 @@ Write-Ok "Default Vite boilerplate cleaned up"
 
 # ── npm install ───────────────────────────────────────────────────────────────
 # Required runtime packages (beyond what the Vite template provides)
-$RequiredPkgs = @("react", "react-dom", "mespeak")
+$RequiredPkgs = @("mespeak", "react", "react-dom")
 
 Write-Inf "Running npm install (this may take a minute)…"
 & $NpmCmd install --silent 2>&1 | Select-Object -Last 4 | ForEach-Object { Write-Inf $_ }
@@ -456,10 +456,9 @@ Write-Inf "Desktop icon:   Launch PPA Therapy"
 Write-Inf "Start Menu:     Start → PPA Therapy → Launch PPA Therapy"
 Write-Host ""
 
-if ($ApiKey -eq "YOUR_KEY_HERE") {
-    Write-Warn "Remember to add your API key:"
-    Write-Inf  "  Edit $InstallDir\.env"
-    Write-Inf  "  Replace YOUR_KEY_HERE with your key from https://console.anthropic.com"
+if ([string]::IsNullOrWhiteSpace($ApiKey)) {
+    Write-Warn "No API key was entered — the app will prompt for it on first launch."
+    Write-Inf  "  Or edit $InstallDir\.env and add: VITE_ANTHROPIC_API_KEY=sk-ant-..."
     Write-Host ""
 }
 

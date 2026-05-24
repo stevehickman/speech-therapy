@@ -1697,18 +1697,19 @@ def build_tech_ref(path):
 #  MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
-BASE = "/Users/stevehickman/Documents/GitHub/speech-therapy/.claude/worktrees/priceless-nash"
+import pathlib
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 USER_GUIDE_PATHS = [
-    f"{BASE}/ppa-speech-therapy-user-guide.pdf",
-    f"{BASE}/installer/ppa-speech-therapy-user-guide.pdf",
-    f"{BASE}/win-installer/ppa-speech-therapy-user-guide.pdf",
+    ROOT / "ppa-speech-therapy-user-guide.pdf",
+    ROOT / "mac-installer" / "ppa-speech-therapy-user-guide.pdf",
+    ROOT / "win-installer" / "ppa-speech-therapy-user-guide.pdf",
 ]
 
 TECH_REF_PATHS = [
-    f"{BASE}/ppa-speech-therapy-docs.pdf",
-    f"{BASE}/installer/ppa-speech-therapy-docs.pdf",
-    f"{BASE}/win-installer/ppa-speech-therapy-docs.pdf",
+    ROOT / "ppa-speech-therapy-docs.pdf",
+    ROOT / "mac-installer" / "ppa-speech-therapy-docs.pdf",
+    ROOT / "win-installer" / "ppa-speech-therapy-docs.pdf",
 ]
 
 if __name__ == "__main__":

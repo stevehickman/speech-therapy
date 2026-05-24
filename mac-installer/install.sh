@@ -234,10 +234,9 @@ read -r -s API_KEY
 echo   # newline after hidden input
 
 if [[ -z "$API_KEY" ]]; then
-  warn "No API key entered — you can add it later by editing:"
-  inf "  $INSTALL_DIR/.env"
-  inf "  Change: VITE_ANTHROPIC_API_KEY=YOUR_KEY_HERE"
-  API_KEY="YOUR_KEY_HERE"
+  warn "No API key entered — the app will prompt for it on first launch."
+  inf "  (The caregiver PIN will be required to enter the key.)"
+  inf "  Or edit $INSTALL_DIR/.env later and set VITE_ANTHROPIC_API_KEY=sk-ant-..."
 elif [[ "$API_KEY" != sk-ant-* ]]; then
   warn "Key doesn't look like an Anthropic key — installing anyway."
   inf "Edit $INSTALL_DIR/.env to correct it if needed."
@@ -295,7 +294,7 @@ ok "Default Vite boilerplate cleaned up"
 
 # ── npm install ───────────────────────────────────────────────────────────────
 # Required runtime packages (beyond what the Vite template provides)
-REQUIRED_PKGS=(react react-dom mespeak)
+REQUIRED_PKGS=(mespeak react react-dom)
 
 inf "Running npm install (this may take a minute)…"
 cd "$INSTALL_DIR"
@@ -389,10 +388,9 @@ echo
 inf "Installed to:   $INSTALL_DIR"
 inf "Desktop icon:   Launch PPA Therapy.command"
 echo
-if [[ "$API_KEY" == "YOUR_KEY_HERE" ]]; then
-  warn "Remember to add your API key:"
-  inf "  Edit $INSTALL_DIR/.env"
-  inf "  Replace YOUR_KEY_HERE with your key from https://console.anthropic.com"
+if [[ -z "$API_KEY" ]]; then
+  warn "No API key was entered — the app will prompt for it on first launch."
+  inf "  Or edit $INSTALL_DIR/.env and add: VITE_ANTHROPIC_API_KEY=sk-ant-..."
   echo
 fi
 inf "To start the app:  double-click 'Launch PPA Therapy' on your Desktop"
