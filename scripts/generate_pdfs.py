@@ -384,21 +384,112 @@ def build_user_guide(path):
         ST['normal']))
     story.append(PageBreak())
 
-    # ── PAGE 3 — GETTING STARTED ──────────────────────────────────────────────
+    # ── PAGE 3 — INSTALLATION ─────────────────────────────────────────────────
+    story.append(section_rule())
+    story.append(Paragraph("Installation", ST['section']))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        "The app is distributed as a zip archive containing an installer script, "
+        "the application bundle, and this documentation. Unzip the archive, then "
+        "follow the steps for your operating system below. All files must remain "
+        "in the same folder.",
+        ST['normal']))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("macOS", ST['subsection']))
+    story.append(Paragraph(
+        "<b>Requirements:</b> macOS 12 Monterey or later · "
+        "Node.js 18+ (the installer will guide you if missing) · "
+        "Internet connection (for npm packages during install).",
+        ST['normal']))
+    story.append(Spacer(1, 0.15*cm))
+    story.append(Paragraph(
+        "1.  Double-click <b>Install PPA Therapy.command</b>.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "    If macOS shows a security warning: right-click the file → <b>Open</b> → <b>Open</b> "
+        "to approve it once.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "2.  Follow the on-screen prompts to choose an install location and optionally "
+        "enter your Anthropic API key. You can skip the key — the app will prompt for it "
+        "on first launch.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "3.  When finished, double-click <b>Launch PPA Therapy</b> on your Desktop. "
+        "The app opens automatically in your browser.",
+        ST['bullet']))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("Windows", ST['subsection']))
+    story.append(Paragraph(
+        "<b>Requirements:</b> Windows 10 or 11 · "
+        "Node.js 18+ (the installer will guide you if missing) · "
+        "Internet connection (for npm packages during install).",
+        ST['normal']))
+    story.append(Spacer(1, 0.15*cm))
+    story.append(Paragraph(
+        "1.  Double-click <b>Install PPA Therapy.bat</b>.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "    If Windows SmartScreen shows a warning: click <b>More info</b> → "
+        "<b>Run anyway</b>. The script only creates a local project — it does not "
+        "modify system settings.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "2.  Follow the on-screen prompts to choose an install location and optionally "
+        "enter your Anthropic API key. You can skip the key — the app will prompt for it "
+        "on first launch.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "3.  When finished, double-click <b>Launch PPA Therapy</b> on your Desktop. "
+        "A console window opens briefly and your browser loads the app automatically.",
+        ST['bullet']))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("Updating", ST['subsection']))
+    story.append(Paragraph(
+        "To install a newer version, run the installer again with the updated bundle "
+        "and choose the same install folder. Your session data and custom content are "
+        "stored in the browser and are not affected. Download a backup from "
+        "<b>Progress → ⚙ Settings</b> before updating as a precaution.",
+        ST['normal']))
+    story.append(Spacer(1, 0.3*cm))
+
+    story.append(Paragraph("Uninstalling", ST['subsection']))
+    story.append(Paragraph(
+        "<b>macOS:</b> Delete the install folder (default: <i>~/PPA Therapy</i>) and "
+        "the Desktop launcher.",
+        ST['normal']))
+    story.append(Paragraph(
+        "<b>Windows:</b> Use <i>Start → PPA Therapy → Uninstall PPA Therapy</i>, or "
+        "delete <i>%LOCALAPPDATA%\\PPA Therapy</i> and the Desktop shortcut manually.",
+        ST['normal']))
+    story.append(PageBreak())
+
+    # ── PAGE 4 — GETTING STARTED ──────────────────────────────────────────────
     story.append(section_rule())
     story.append(Paragraph("Getting Started", ST['section']))
     story.append(Spacer(1, 0.2*cm))
 
-    story.append(Paragraph("Opening the App", ST['subsection']))
+    story.append(Paragraph("Starting the App", ST['subsection']))
     story.append(Paragraph(
-        "The app runs entirely in your web browser — there is nothing to install for basic use. "
-        "Open the app in <b>Chrome</b> or <b>Safari</b> on any device. The recommended screen "
-        "size is a tablet or laptop (10\" or larger).",
+        "Double-click <b>Launch PPA Therapy</b> on your Desktop. A small console window "
+        "opens (this is normal — it runs the local server), and the app loads automatically "
+        "in your browser within a few seconds. The recommended screen size is a tablet or "
+        "laptop (10\" or larger).",
         ST['normal']))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.15*cm))
     story.append(Paragraph(
-        "On <b>iPad</b>, tap the Share button in Safari then <b>Add to Home Screen</b> to install "
-        "the app as a PWA — it will open full-screen without the browser toolbar.",
+        "To stop the app, close the console window. The browser tab can be closed at any time "
+        "— your progress is saved automatically.",
+        ST['normal']))
+    story.append(Spacer(1, 0.15*cm))
+    story.append(Paragraph(
+        "<b>iPad / direct browser use:</b> The app can also be opened directly in Safari or "
+        "Chrome without the installer — contact your clinician for the URL. On iPad, tap the "
+        "Share button in Safari then <b>Add to Home Screen</b> to install it as a PWA and "
+        "open it full-screen without the browser toolbar.",
         ST['normal']))
     story.append(Spacer(1, 0.3*cm))
 
