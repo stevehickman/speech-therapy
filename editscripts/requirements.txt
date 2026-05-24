@@ -1,6 +1,0 @@
-# Dependencies for the PDF edit/generation scripts in this directory.
-# Install with:  pip install -r editscripts/requirements.txt
-
-pypdf>=4.0          # read/write/merge existing PDFs (used by update_pdfs.py)
-reportlab>=4.0      # generate and overlay PDF content (used by both scripts)
-pdfplumber>=0.11    # extract text coordinates for overlay targeting (used by update_pdfs.py)

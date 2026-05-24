@@ -5,12 +5,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUNDLE_SCRIPT="$SCRIPT_DIR/ppa-source/bundle.js"
-BUNDLE_OUTPUT="$SCRIPT_DIR/ppa-source/ppa-speech-therapy-bundle.jsx"
-MAC_BUNDLE="$SCRIPT_DIR/mac-installer/ppa-speech-therapy-bundle.jsx"
-WIN_BUNDLE="$SCRIPT_DIR/win-installer/ppa-speech-therapy-bundle.jsx"
-MAC_INSTALL="$SCRIPT_DIR/mac-installer/install.sh"
-WIN_INSTALL="$SCRIPT_DIR/win-installer/install.ps1"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUNDLE_SCRIPT="$REPO_ROOT/ppa-source/bundle.js"
+BUNDLE_OUTPUT="$REPO_ROOT/ppa-source/ppa-speech-therapy-bundle.jsx"
+MAC_BUNDLE="$REPO_ROOT/mac-installer/ppa-speech-therapy-bundle.jsx"
+WIN_BUNDLE="$REPO_ROOT/win-installer/ppa-speech-therapy-bundle.jsx"
+MAC_INSTALL="$REPO_ROOT/mac-installer/install.sh"
+WIN_INSTALL="$REPO_ROOT/win-installer/install.ps1"
 
 # ── 1. Generate the bundle ────────────────────────────────────────────────────
 echo "Running bundle.js..."
