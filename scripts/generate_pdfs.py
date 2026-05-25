@@ -343,7 +343,7 @@ def build_user_guide(path):
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(
-        "The suite provides eleven structured practice modules, plus an AI therapist assistant "
+        "The suite provides thirteen structured practice modules, plus an AI therapist assistant "
         "(Dr. Aria, powered by Claude), progress tracking, and export/import tools for "
         "therapist-customised content.",
         ST['normal']))
@@ -365,6 +365,8 @@ def build_user_guide(path):
             ["Family &amp; Friends", "Graph-based family tree with personalised relationship labels"],
             ["Memory", "Multiple-choice memory questions drawn from family facts"],
             ["Progress", "Session history, accuracy trends, and SR statistics"],
+            ["Photo Library", "Media URL library — images, videos, and audio with health checking"],
+            ["Profile", "Patient name, daily goal, day streak, and condition type selector"],
         ],
         col_widths=[7*cm, CONTENT_W - 7*cm]
     )
@@ -501,7 +503,7 @@ def build_user_guide(path):
         "To customise the word lists and materials:",
         ST['normal']))
     story.append(Spacer(1, 0.1*cm))
-    story.append(Paragraph("• Tap <b>Admin</b> in the sidebar (PIN: 1234 — change this before clinical use).", ST['bullet']))
+    story.append(Paragraph("• Open the <b>Profile</b> module to set the patient's name and condition type (protected by the Caregiver PIN, default: 0000 — change this before clinical use).", ST['bullet']))
     story.append(Paragraph("• In the Naming module admin panel, add, edit, or remove picture cards.", ST['bullet']))
     story.append(Paragraph("• In other modules, tap the admin toolbar to edit word banks and prompts.", ST['bullet']))
     story.append(Paragraph("• Use <b>Export / Import</b> to save customised content as .ppa files that can be shared with other devices.", ST['bullet']))
@@ -509,7 +511,7 @@ def build_user_guide(path):
 
     story.append(Paragraph("Navigation", ST['subsection']))
     story.append(Paragraph(
-        "The <b>sidebar</b> on the left lists all nine modules. Tap any module name to switch. "
+        "The <b>sidebar</b> on the left lists all thirteen modules. Tap any module name to switch. "
         "Your place within a session is preserved when you switch and return.",
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
@@ -962,8 +964,10 @@ def build_user_guide(path):
     story.append(Paragraph("Admin Panel", ST['section']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "The Admin Panel is protected by a 4-digit PIN (default: <b>1234</b>). "
-        "Change this before clinical use by editing the source code constant <code>ADMIN_PIN</code>.",
+        "Content management areas in the app are protected by a 4-digit <b>Caregiver PIN</b> "
+        "(default: <b>0000</b>). Change this in the <b>Profile</b> module before clinical use. "
+        "The PIN prevents accidental edits by the patient and can be updated at any time "
+        "without editing any source files.",
         ST['normal']))
     story.append(Spacer(1, 0.15*cm))
 
@@ -985,12 +989,13 @@ def build_user_guide(path):
     story.append(Spacer(1, 0.15*cm))
 
     warn_box = CalloutBox(
-        icon="⚠️",
-        title="Admin PIN security",
+        icon="!",
+        title="Caregiver PIN security",
         body_lines=[
-            ("The default PIN is 1234 and is visible in the source code. "
-             "Change it before using the app in a clinical setting. "
-             "The PIN only prevents accidental edits — it is not a security feature.", False),
+            ("The default Caregiver PIN is 0000. Change it in the Profile module before "
+             "clinical use. The PIN prevents accidental content edits by the patient — "
+             "it is not a strong security feature. No source code changes are needed: "
+             "the PIN is stored in the browser and can be updated at any time.", False),
         ],
         bg=WARN_BG, border=WARN_BORDER,
     )
@@ -1032,10 +1037,99 @@ def build_user_guide(path):
     story.append(tip_box)
     story.append(PageBreak())
 
-    # ── PAGE 11 — spacer ──────────────────────────────────────────────────────
+    # ── PROFILE MODULE ────────────────────────────────────────────────────────
+    story.append(section_rule())
+    story.append(Paragraph("Profile", ST['section']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "The Profile module stores information about the patient and controls how the app "
+        "adapts over time. It is accessible to everyone — no PIN is needed to view it — "
+        "but the condition type selector is protected by the Caregiver PIN.",
+        ST['normal']))
+    story.append(Spacer(1, 0.15*cm))
+
+    story.append(Paragraph("Patient information", ST['subsubsection']))
+    story.append(Paragraph("• <b>Name</b> — the patient's preferred name, shown as a greeting at the top of the Profile screen.", ST['bullet']))
+    story.append(Paragraph("• <b>Daily goal (minutes)</b> — the target practice time per day (default: 20 minutes).", ST['bullet']))
+    story.append(Paragraph("• <b>Day streak</b> — the number of consecutive days with at least one practice session. Resets if a day is missed.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>Save Profile</b> to apply changes to name and daily goal.", ST['bullet']))
+    story.append(Spacer(1, 0.15*cm))
+
+    story.append(Paragraph("Condition type (Caregiver PIN required)", ST['subsubsection']))
+    story.append(Paragraph(
+        "Tap <b>Change (Admin)</b> and enter the Caregiver PIN to reveal the condition "
+        "selector. Choose the profile that best matches the patient's diagnosis:",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    cond_table = make_table(
+        ["Condition", "Difficulty decay"],
+        [
+            ["Primary Progressive Aphasia (PPA)", "7 days — fast decay; conservative re-entry"],
+            ["Chronic Aphasia", "14 days — moderate decay"],
+            ["Acquired/TBI Aphasia", "21 days — slower decay"],
+            ["Acute Aphasia", "30 days — minimal decay"],
+            ["Dementia", "5 days — very fast decay; maximum scaffold"],
+        ],
+        col_widths=[8*cm, CONTENT_W - 8*cm]
+    )
+    story.append(cond_table)
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "The condition profile controls how quickly the adaptive difficulty level in modules "
+        "such as Sentence Work decays back toward the Supported level when the patient has "
+        "not practised for several days. A shorter half-life means the difficulty resets "
+        "sooner, protecting the patient from being over-challenged at the next session.",
+        ST['normal']))
+    story.append(Spacer(1, 0.25*cm))
+
+    # ── PHOTO LIBRARY MODULE ──────────────────────────────────────────────────
+    story.append(section_rule())
+    story.append(Paragraph("Photo Library", ST['section']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "The Photo Library is a personal media URL collection — a place to store links to "
+        "images, videos, and audio clips that are meaningful to the patient. Items are "
+        "labelled, tagged, and can be checked for URL health automatically. "
+        "No PIN is required; the library is open to the patient and caregiver alike.",
+        ST['normal']))
+    story.append(Spacer(1, 0.15*cm))
+
+    story.append(Paragraph("Adding items", ST['subsubsection']))
+    story.append(Paragraph("• Tap <b>+ Add item</b> and enter a label and a URL (image, video, or audio link).", ST['bullet']))
+    story.append(Paragraph("• Choose a media type: <b>Image</b>, <b>Video</b>, or <b>Audio</b>.", ST['bullet']))
+    story.append(Paragraph("• Add one or more tags to help organise the library: person, family, animal, pet, place, food, object, plant, vehicle, or other.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>Save</b> to add the item to the library.", ST['bullet']))
+    story.append(Spacer(1, 0.15*cm))
+
+    story.append(Paragraph("URL health checking", ST['subsubsection']))
+    story.append(Paragraph(
+        "Each item shows a status indicator next to its label:",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    status_table = make_table(
+        ["Status", "Meaning"],
+        [
+            ["Reachable (teal)", "URL responded with a success code — media is accessible"],
+            ["Not found (red)", "URL returned a 404 or similar error — link may be broken"],
+            ["Unverified (amber)", "URL was checked but the response was ambiguous"],
+            ["Unchecked (grey)", "URL has not been checked yet in this session"],
+        ],
+        col_widths=[4.5*cm, CONTENT_W - 4.5*cm]
+    )
+    story.append(status_table)
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "Tap <b>Check all URLs</b> to run a health check on every item in the library. "
+        "Individual items can be re-checked by tapping the status dot.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "All items are stored in the browser (<code>fam_content_items</code> localStorage key) "
+        "and are included in .ppabak backups.",
+        ST['normal']))
     story.append(PageBreak())
 
-    # ── PAGES 12–13 — TIPS FOR EFFECTIVE SESSIONS ────────────────────────────
+    # ── TIPS FOR EFFECTIVE SESSIONS ───────────────────────────────────────────
     story.append(section_rule())
     story.append(Paragraph("Tips for Effective Sessions", ST['section']))
     story.append(Spacer(1, 0.2*cm))
