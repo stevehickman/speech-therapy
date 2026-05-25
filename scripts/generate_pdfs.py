@@ -328,7 +328,7 @@ def build_user_guide(path):
         "and their speech-language pathologists and caregivers.",
         ST['cover_tagline']))
     story.append(Spacer(1, 0.4*cm))
-    story.append(Paragraph("Version 4.0.2  •  May 2026", ST['cover_version']))
+    story.append(Paragraph("Version 4.1.0  •  May 2026", ST['cover_version']))
     story.append(PageBreak())
 
     # ── PAGE 2 — INTRODUCTION ─────────────────────────────────────────────────
@@ -647,7 +647,7 @@ def build_user_guide(path):
 
     admin_box = CalloutBox(
         icon="💡",
-        title="Admin — customising the word list",
+        title="Admin — customising the word list (Standard mode)",
         body_lines=[
             ("Add item: type a word; AI looks up an emoji and fills in cues.", False),
             ("Bulk import photos: select multiple images; AI fills empty word fields.", False),
@@ -657,6 +657,27 @@ def build_user_guide(path):
         bg=TIP_BG, border=TIP_BORDER,
     )
     story.append(admin_box)
+    story.append(Spacer(1, 0.2*cm))
+
+    personal_naming_box = CalloutBox(
+        icon="*",
+        title="Personal Photos mode — family and personal content",
+        body_lines=[
+            ("Tap the 📸 My photos tab at the top of the Naming module to switch to a "
+             "separate word list built from the patient's own photographs. This mode is "
+             "caregiver-accessible — no PIN is needed.", False),
+            ("", False),
+            ("Tap the pencil icon to open the Personal Library:", False),
+            ("  + Add photo: choose an image, name the item, set a category and cues.", False),
+            ("  Bulk import: drag-and-drop or select multiple photos at once.", False),
+            ("  Edit / Delete: manage existing personal items.", False),
+            ("", False),
+            ("Spaced repetition runs independently for personal items. Switching between "
+             "Standard and My photos tabs preserves each mode's own SR progress.", False),
+        ],
+        bg=NEW_BG, border=NEW_BORDER,
+    )
+    story.append(personal_naming_box)
     story.append(PageBreak())
 
     # ── PAGE 6 — REPETITION, SCRIPT TRAINING, SENTENCE BUILDER ───────────────
@@ -664,14 +685,52 @@ def build_user_guide(path):
     story.append(Paragraph("Repetition", ST['section']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "Structured repetition drills at increasing levels of difficulty.",
+        "Structured repetition drills at five levels of difficulty — from single words "
+        "through to full sentences. The module supports text-to-speech (TTS) playback "
+        "and optional speech recognition so patients can practise aloud independently.",
         ST['normal']))
-    story.append(Spacer(1, 0.1*cm))
-    story.append(Paragraph("• Choose a difficulty level (1 = single words, up to 5 = full sentences).", ST['bullet']))
+    story.append(Spacer(1, 0.15*cm))
+
+    story.append(Paragraph("Basic use", ST['subsubsection']))
+    story.append(Paragraph("• Choose a difficulty level using the tabs at the top (1 = single words, 5 = full sentences).", ST['bullet']))
     story.append(Paragraph("• The prompt is shown on screen.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>▶ Play</b> to hear the item spoken aloud via text-to-speech.", ST['bullet']))
     story.append(Paragraph("• The patient repeats the word or phrase aloud.", ST['bullet']))
     story.append(Paragraph("• Tap <b>Correct</b> or <b>Incorrect</b> to record the result.", ST['bullet']))
-    story.append(Paragraph("• Tap <b>Next</b> to advance to the next item.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>Next →</b> to advance to the next item.", ST['bullet']))
+    story.append(Spacer(1, 0.1*cm))
+
+    story.append(Paragraph("Speech recognition", ST['subsubsection']))
+    story.append(Paragraph(
+        "Enable the microphone toggle in the settings row to let the patient speak "
+        "their attempt and have it scored automatically:",
+        ST['normal']))
+    story.append(Paragraph("• Tap <b>🎤 Start Speaking</b> — the button pulses while the microphone is active.", ST['bullet']))
+    story.append(Paragraph("• A live transcript appears below the prompt as the patient speaks.", ST['bullet']))
+    story.append(Paragraph("• The result is colour-coded: teal = great match (≥75% of words), amber = partial match (≥40%), red = keep trying (&lt;40%).", ST['bullet']))
+    story.append(Paragraph("• The manual <b>Correct / Incorrect</b> buttons remain visible at all times and can always override the automatic score.", ST['bullet']))
+    story.append(Spacer(1, 0.1*cm))
+
+    story.append(Paragraph("Voice and speed settings", ST['subsubsection']))
+    story.append(Paragraph(
+        "A settings row above the level tabs provides a voice selector, a speed slider, "
+        "and the speech-recognition toggle. Voice options depend on the browser — Chrome "
+        "and Edge on desktop typically offer several natural-sounding English voices.",
+        ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+
+    rep_tip = CalloutBox(
+        icon="i",
+        title="Tip — enabling independent practice",
+        body_lines=[
+            ("Enable the microphone toggle and the patient can practise each item without "
+             "a helper watching the screen. The automatic scoring records the attempt; "
+             "the manual Correct / Incorrect buttons are always available to override it. "
+             "Switching the level tab resets the microphone state for the new level.", False),
+        ],
+        bg=TIP_BG, border=TIP_BORDER,
+    )
+    story.append(rep_tip)
     story.append(Spacer(1, 0.25*cm))
 
     story.append(section_rule())
@@ -704,41 +763,134 @@ def build_user_guide(path):
     story.append(Paragraph("• Filter the word bank by category using the tabs at the top.", ST['bullet']))
     story.append(PageBreak())
 
-    # ── PAGE 7 — SENTENCE WORK, VIDEO QUESTIONS ───────────────────────────────
+    # ── SENTENCE WORK ─────────────────────────────────────────────────────────
     story.append(section_rule())
     story.append(Paragraph("Sentence Work", ST['section']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "Two sub-modes for sentence-level language practice:",
+        "Two sub-modes for sentence-level language practice, selected by the tabs at the top. "
+        "After each response, Dr. Aria provides written clinical feedback if AI is connected.",
+        ST['normal']))
+    story.append(Spacer(1, 0.2*cm))
+
+    story.append(Paragraph("Sentence Completion", ST['subsection']))
+    story.append(Paragraph(
+        "A sentence stem is displayed (e.g. <i>\"Every morning I like to...\"</i>) along with "
+        "a topic hint. The patient types the rest of the sentence in the text box.",
         ST['normal']))
     story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("• Type a completion in the text box.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>Get Feedback</b> to receive Dr. Aria's commentary on grammar, meaning, and fluency.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>Skip →</b> to move on without feedback.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>Next task →</b> to advance after feedback.", ST['bullet']))
+    story.append(Spacer(1, 0.2*cm))
+
+    story.append(Paragraph("Sentence Construction", ST['subsection']))
     story.append(Paragraph(
-        "<b>Sentence Completion</b> — a sentence with a missing word is shown. "
-        "The patient types or says the missing word.",
-        ST['bullet']))
-    story.append(Paragraph(
-        "<b>Sentence Construction</b> — a topic or picture prompt is shown. "
-        "The patient constructs a complete sentence.",
-        ST['bullet']))
-    story.append(Spacer(1, 0.1*cm))
-    story.append(Paragraph(
-        "After each response, Dr. Aria gives spoken and written feedback if AI is connected. "
-        "Tap <b>Next</b> to advance.",
+        "A set of word chips is displayed alongside a hint. The patient builds a sentence by "
+        "tapping chips or typing freely. <b>Not every word needs to be used</b> — each set "
+        "is deliberately larger than the minimum sentence so that multiple valid answers are "
+        "always possible.",
         ST['normal']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("• Tap a word chip to insert it at the cursor position in the text box.", ST['bullet']))
+    story.append(Paragraph("• Tapping the same chip again inserts it a second time.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>⌫ Delete word</b> to remove the last word from the text box.", ST['bullet']))
+    story.append(Paragraph("• Type additional words directly at any time — you are not limited to the chips.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>Get Feedback</b> — Dr. Aria accepts any grammatically correct sentence that uses some or all of the given words.", ST['bullet']))
+    story.append(Spacer(1, 0.15*cm))
+
+    diff_box = CalloutBox(
+        icon="*",
+        title="Adaptive word ordering",
+        body_lines=[
+            ("The order the word chips appear adjusts automatically to the patient's "
+             "measured ability. Three display levels are used:", False),
+            ("", False),
+            ("  Supported (purple badge) — words appear in sentence order. Maximum scaffold.", False),
+            ("  Standard  (amber badge)  — first half of words lightly shuffled.", False),
+            ("  Challenge (teal badge)   — all words randomised. No positional cues.", False),
+            ("", False),
+            ("After Dr. Aria's feedback, rate the difficulty using the three buttons:", False),
+            ("  Hard — lowers the difficulty level for the next task.", False),
+            ("  OK   — keeps the current level and records today's date.", False),
+            ("  Easy — raises the difficulty level for the next task.", False),
+            ("", False),
+            ("The step sizes are tuned to the patient's diagnosis profile: PPA adapts "
+             "more conservatively than acute aphasia. If several days pass without "
+             "practice, the stored level automatically decays toward Supported so the "
+             "patient is not over-challenged at the next session.", False),
+        ],
+        bg=NEW_BG, border=NEW_BORDER,
+    )
+    story.append(diff_box)
+    story.append(Spacer(1, 0.15*cm))
+
+    bonus_box = CalloutBox(
+        icon="+",
+        title="Bonus Challenge — making a second sentence",
+        body_lines=[
+            ("After Dr. Aria responds, an amber Bonus Challenge card appears. "
+             "The patient can try to construct a second, different sentence from "
+             "the same word chips.", False),
+            ("", False),
+            ("Dr. Aria evaluates the bonus sentence separately — confirming whether "
+             "it is valid and genuinely different from the first. Tap Skip to go "
+             "straight to the difficulty rating buttons.", False),
+            ("", False),
+            ("The Hard / OK / Easy rating buttons only appear once the bonus is "
+             "either attempted or skipped, so the difficulty signal reflects the "
+             "full practice round.", False),
+        ],
+        bg=WARN_BG, border=WARN_BORDER,
+    )
+    story.append(bonus_box)
+    story.append(Spacer(1, 0.15*cm))
+
+    sw_admin_box = CalloutBox(
+        icon="i",
+        title="Admin — adding and editing tasks",
+        body_lines=[
+            ("Sentence Completion: type the sentence stem (e.g. 'When I feel happy, I...') "
+             "and an optional topic hint.", False),
+            ("", False),
+            ("Sentence Construction: type a complete example sentence in the sentence field "
+             "(e.g. 'The dog runs in the park'). Words are extracted automatically — there "
+             "is no need to comma-separate them. Add synonyms or alternate words to the "
+             "same field to give the patient more flexibility and enable multiple valid "
+             "answers (e.g. 'The dog runs in the park a big').", False),
+            ("", False),
+            ("Export / Import: save custom tasks as .ppa files to share across devices.", False),
+        ],
+        bg=TIP_BG, border=TIP_BORDER,
+    )
+    story.append(sw_admin_box)
     story.append(Spacer(1, 0.25*cm))
 
     story.append(section_rule())
     story.append(Paragraph("Video Questions", ST['section']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "Short video clips (from YouTube) are played, followed by comprehension questions. "
-        "This module supports auditory and visual processing alongside language.",
+        "Short video clips are played, followed by comprehension questions. "
+        "This module supports auditory and visual processing alongside language. "
+        "Two modes are available via the tabs at the top:",
         ST['normal']))
     story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph(
+        "<b>Standard mode (🎬)</b> — built-in clips from YouTube plus any custom clips "
+        "added via the admin panel. Managed with the caregiver PIN.",
+        ST['bullet']))
+    story.append(Paragraph(
+        "<b>Personal mode (🎞️)</b> — clips uploaded from the device (local video files). "
+        "Accessible with the caregiver PIN via the pencil icon. Video data is stored in "
+        "the browser's IndexedDB, not localStorage, so it survives browser cache clears.",
+        ST['bullet']))
+    story.append(Spacer(1, 0.1*cm))
+    story.append(Paragraph("<b>Watching a clip:</b>", ST['normal']))
     story.append(Paragraph("• Select a video from the list.", ST['bullet']))
     story.append(Paragraph("• Watch the clip (plays embedded in the app).", ST['bullet']))
     story.append(Paragraph("• Answer comprehension questions — multiple choice or open-ended.", ST['bullet']))
-    story.append(Paragraph("• Tap <b>Submit</b> to record your answer.", ST['bullet']))
+    story.append(Paragraph("• Tap <b>Submit</b> to record the answer.", ST['bullet']))
     story.append(Paragraph("• Tap <b>Next question</b> to continue.", ST['bullet']))
     story.append(PageBreak())
 
@@ -972,6 +1124,10 @@ def build_user_guide(path):
             ["Audio hints do not play (sound icon)",
              "Check that the device is not muted and the browser has permission to play audio. "
              "On iOS, the silent switch must be off. Tap the 🔊 button to toggle audio hints."],
+            ["Speech recognition does not work",
+             "The browser must have microphone permission. In Chrome/Edge: click the lock icon "
+             "in the address bar and enable Microphone. On iOS/Safari, go to Settings → Safari → "
+             "Microphone. Speech recognition requires an internet connection on some browsers."],
         ],
         col_widths=[6*cm, CONTENT_W - 6*cm]
     )
@@ -979,7 +1135,7 @@ def build_user_guide(path):
     story.append(Spacer(1, 0.5*cm))
 
     story.append(Paragraph(
-        "PPA Speech Therapy Suite  •  Version 4.0.2  •  May 2026  •  "
+        "PPA Speech Therapy Suite  •  Version 4.1.0  •  May 2026  •  "
         "Designed for use under the supervision of a speech-language pathologist.",
         ST['footer']))
 
