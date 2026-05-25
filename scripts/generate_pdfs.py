@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Generate PPA Speech Therapy Suite PDFs:
-  1. ppa-speech-therapy-user-guide.pdf
-  2. ppa-speech-therapy-docs.pdf
+Generate Speech Therapy Suite PDFs:
+  1. speech-therapy-user-guide.pdf
+  2. speech-therapy-docs.pdf
 """
 
 import shutil
@@ -308,24 +308,24 @@ def build_user_guide(path):
         pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=MARGIN + 0.5*cm, bottomMargin=MARGIN,
-        title="PPA Speech Therapy Suite — Therapist & Caregiver User Guide",
-        author="PPA Speech Therapy Suite",
+        title="Speech Therapy Suite — Therapist & Caregiver User Guide",
+        author="Speech Therapy Suite",
     )
 
     story = []
-    _, on_later = make_page_template("PPA Speech Therapy Suite", None)
+    _, on_later = make_page_template("Speech Therapy Suite", None)
 
     # ── COVER PAGE ────────────────────────────────────────────────────────────
     story.append(Spacer(1, 3*cm))
     story.append(Paragraph("🌿", ST['cover_emoji']))
     story.append(Spacer(1, 0.4*cm))
-    story.append(Paragraph("PPA Speech Therapy Suite", ST['cover_title']))
+    story.append(Paragraph("Speech Therapy Suite", ST['cover_title']))
     story.append(Spacer(1, 0.3*cm))
     story.append(Paragraph("Therapist &amp; Caregiver User Guide", ST['cover_subtitle']))
     story.append(Spacer(1, 0.5*cm))
     story.append(Paragraph(
-        "Designed for people with Primary Progressive Aphasia (PPA)<br/>"
-        "and their speech-language pathologists and caregivers.",
+        "A customisable speech-language practice suite for patients<br/>"
+        "and the clinicians and caregivers who support them.",
         ST['cover_tagline']))
     story.append(Spacer(1, 0.4*cm))
     story.append(Paragraph("Version 4.1.0  •  May 2026", ST['cover_version']))
@@ -336,16 +336,19 @@ def build_user_guide(path):
     story.append(Paragraph("Introduction", ST['section']))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(
-        "The <b>PPA Speech Therapy Suite</b> is a browser-based tool designed to help people "
-        "with <b>Primary Progressive Aphasia (PPA)</b> — a neurological condition that gradually "
-        "affects the ability to speak, read, and understand language — maintain and practise "
-        "communication skills.",
+        "The <b>Speech Therapy Suite</b> is a customisable, browser-based practice tool "
+        "designed for people with acquired or progressive speech and language disorders. "
+        "It supports a wide range of conditions — including aphasia, Primary Progressive "
+        "Aphasia (PPA), post-stroke language difficulties, traumatic brain injury (TBI), "
+        "and dementia-related communication decline — and can be tailored by a clinician "
+        "or caregiver to match each patient's specific goals and needs.",
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(
-        "The suite provides thirteen structured practice modules, plus an AI therapist assistant "
+        "The suite provides thirteen structured practice modules, an AI therapist assistant "
         "(Dr. Aria, powered by Claude), progress tracking, and export/import tools for "
-        "therapist-customised content.",
+        "clinician-customised content. Word lists, scripts, video clips, and practice tasks "
+        "are all editable — making it straightforward to tailor sessions to any patient.",
         ST['normal']))
     story.append(Spacer(1, 0.3*cm))
 
@@ -377,7 +380,7 @@ def build_user_guide(path):
     story.append(Paragraph(
         "This guide is written for <b>speech-language pathologists (SLPs)</b> and "
         "<b>caregivers</b> who set up and supervise sessions. The interface is also "
-        "designed to be used directly by the person with PPA, with or without a helper present.",
+        "designed to be used directly by the patient, with or without a helper present.",
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(
@@ -1078,7 +1081,9 @@ def build_user_guide(path):
         "The condition profile controls how quickly the adaptive difficulty level in modules "
         "such as Sentence Work decays back toward the Supported level when the patient has "
         "not practised for several days. A shorter half-life means the difficulty resets "
-        "sooner, protecting the patient from being over-challenged at the next session.",
+        "sooner, protecting the patient from being over-challenged at the next session. "
+        "Select the profile that best matches the patient's diagnosis — it can be changed "
+        "at any time as the patient's condition evolves.",
         ST['normal']))
     story.append(Spacer(1, 0.25*cm))
 
@@ -1137,8 +1142,9 @@ def build_user_guide(path):
     story.append(Paragraph("Session length and pacing", ST['subsection']))
     story.append(Paragraph(
         "Shorter, more frequent sessions are generally more effective than long infrequent ones. "
-        "Aim for 15–30 minutes per day if possible. Watch for signs of fatigue — reduced "
-        "engagement, increased errors, or frustration — and end the session early if needed.",
+        "Aim for 15–30 minutes per day if possible, adjusted to the patient's stamina and "
+        "engagement. Watch for signs of fatigue — increased errors, withdrawal, or frustration "
+        "— and end the session early if needed.",
         ST['normal']))
     story.append(Spacer(1, 0.2*cm))
 
@@ -1161,7 +1167,7 @@ def build_user_guide(path):
 
     story.append(Paragraph("Involving the patient in goal-setting", ST['subsection']))
     story.append(Paragraph(
-        "Where possible, involve the person with PPA in deciding which words to practise and "
+        "Where possible, involve the patient in deciding which words to practise and "
         "which scripts matter most to them. Personally meaningful content produces better "
         "motivation and retention.",
         ST['normal']))
@@ -1229,7 +1235,7 @@ def build_user_guide(path):
     story.append(Spacer(1, 0.5*cm))
 
     story.append(Paragraph(
-        "PPA Speech Therapy Suite  •  Version 4.1.0  •  May 2026  •  "
+        "Speech Therapy Suite  •  Version 4.1.0  •  May 2026  •  "
         "Designed for use under the supervision of a speech-language pathologist.",
         ST['footer']))
 
@@ -1240,7 +1246,7 @@ def build_user_guide(path):
         c.setFont('Helvetica', 8)
         c.setFillColor(colors.HexColor("#888888"))
         c.drawString(MARGIN, PAGE_H - MARGIN + 6,
-                     f"PPA Speech Therapy Suite  •  Page {d.page}")
+                     f"Speech Therapy Suite  •  Page {d.page}")
         c.setStrokeColor(TEAL)
         c.setLineWidth(0.5)
         c.line(MARGIN, PAGE_H - MARGIN + 2, PAGE_W - MARGIN, PAGE_H - MARGIN + 2)
@@ -1260,8 +1266,8 @@ def build_tech_ref(path):
         pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=MARGIN + 0.5*cm, bottomMargin=MARGIN,
-        title="PPA Speech Therapy Suite — Technical Reference Documentation",
-        author="PPA Speech Therapy Suite",
+        title="Speech Therapy Suite — Technical Reference Documentation",
+        author="Speech Therapy Suite",
     )
 
     story = []
@@ -1272,7 +1278,7 @@ def build_tech_ref(path):
         c.setFont('Helvetica', 8)
         c.setFillColor(colors.HexColor("#888888"))
         c.drawString(MARGIN, PAGE_H - MARGIN + 6,
-                     f"PPA Speech Therapy Suite — Technical Reference  •  Page {d.page}")
+                     f"Speech Therapy Suite — Technical Reference  •  Page {d.page}")
         c.setStrokeColor(TEAL)
         c.setLineWidth(0.5)
         c.line(MARGIN, PAGE_H - MARGIN + 2, PAGE_W - MARGIN, PAGE_H - MARGIN + 2)
@@ -1282,14 +1288,14 @@ def build_tech_ref(path):
     story.append(Spacer(1, 3*cm))
     story.append(Paragraph("🌿", ST['cover_emoji']))
     story.append(Spacer(1, 0.4*cm))
-    story.append(Paragraph("PPA Speech Therapy Suite", ST['cover_title']))
+    story.append(Paragraph("Speech Therapy Suite", ST['cover_title']))
     story.append(Spacer(1, 0.3*cm))
     story.append(Paragraph("Technical Reference Documentation", ST['cover_subtitle']))
     story.append(Spacer(1, 0.5*cm))
     story.append(Paragraph("Version 4.0.2  (May 2026)", ST['cover_version']))
     story.append(Spacer(1, 0.3*cm))
     story.append(Paragraph(
-        "Single-file React application for Primary Progressive Aphasia (PPA) speech therapy.",
+        "A customisable, browser-based speech-language practice suite.",
         ST['cover_tagline']))
     story.append(Paragraph(
         "Runs as a Claude.ai artifact or locally via Vite.  Powered by Claude Sonnet.",
@@ -1301,7 +1307,7 @@ def build_tech_ref(path):
     story.append(Paragraph("1.  Architecture Overview", ST['section']))
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "The PPA Speech Therapy Suite is a single-page React application that runs "
+        "The Speech Therapy Suite is a single-page React application that runs "
         "entirely in the browser. There is no backend server — all persistence is via "
         "<code>localStorage</code> and all AI calls are made directly from the browser "
         "to the Anthropic API.",
@@ -2193,7 +2199,7 @@ def build_tech_ref(path):
     story.append(thin_rule())
     story.append(Spacer(1, 0.1*cm))
     story.append(Paragraph(
-        "PPA Speech Therapy Suite  •  Version 4.0.2  •  May 2026  •  Technical Reference",
+        "Speech Therapy Suite  •  Version 4.0.2  •  May 2026  •  Technical Reference",
         ST['footer']))
 
     doc.build(story, onFirstPage=on_first, onLaterPages=on_later)
@@ -2208,15 +2214,15 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 USER_GUIDE_PATHS = [
-    ROOT / "ppa-speech-therapy-user-guide.pdf",
-    ROOT / "mac-installer" / "ppa-speech-therapy-user-guide.pdf",
-    ROOT / "win-installer" / "ppa-speech-therapy-user-guide.pdf",
+    ROOT / "speech-therapy-user-guide.pdf",
+    ROOT / "mac-installer" / "speech-therapy-user-guide.pdf",
+    ROOT / "win-installer" / "speech-therapy-user-guide.pdf",
 ]
 
 TECH_REF_PATHS = [
-    ROOT / "ppa-speech-therapy-docs.pdf",
-    ROOT / "mac-installer" / "ppa-speech-therapy-docs.pdf",
-    ROOT / "win-installer" / "ppa-speech-therapy-docs.pdf",
+    ROOT / "speech-therapy-docs.pdf",
+    ROOT / "mac-installer" / "speech-therapy-docs.pdf",
+    ROOT / "win-installer" / "speech-therapy-docs.pdf",
 ]
 
 if __name__ == "__main__":

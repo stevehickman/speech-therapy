@@ -1,13 +1,15 @@
-PPA Speech Therapy Suite — Windows Installer
+Speech Therapy Suite — Windows Installer
 Version 4 · March 2026
-═════════════════════════════════════════════
+═════════════════════════════════════════
 
 CONTENTS
 ────────
-  Install PPA Therapy.bat       ← Double-click to install
-  install.ps1                   ← PowerShell installer (run by the .bat file)
-  ppa-speech-therapy-bundle.jsx ← Application bundle
-  README.txt                    ← This file
+  Install Speech Therapy.bat       ← Double-click to install
+  install.ps1                      ← PowerShell installer (run by the .bat file)
+  speech-therapy-bundle.jsx        ← Application bundle
+  speech-therapy-user-guide.pdf    ← User guide (caregivers & clinicians)
+  speech-therapy-docs.pdf          ← Technical reference
+  README.txt                       ← This file
 
 
 REQUIREMENTS
@@ -23,7 +25,7 @@ HOW TO INSTALL
 ──────────────
 1. Make sure all files are in the same folder.
 
-2. Double-click "Install PPA Therapy.bat".
+2. Double-click "Install Speech Therapy.bat".
 
 3. If Windows SmartScreen shows a warning:
      Click "More info" → "Run anyway"
@@ -32,7 +34,7 @@ HOW TO INSTALL
 
 4. Follow the on-screen prompts:
    • Confirm or change the install location
-     (default: C:\Users\<you>\AppData\Local\PPA Therapy)
+     (default: C:\Users\<you>\AppData\Local\Speech Therapy)
    • Paste your Anthropic API key  (you can skip this and enter it later)
    • The installer sets up the project, installs packages, and creates
      a Desktop shortcut and Start Menu entry.
@@ -41,15 +43,15 @@ HOW TO INSTALL
    on first launch.  Enter the caregiver PIN (default: 0000) when
    asked, then paste your key.
 
-5. After installation, double-click "Launch PPA Therapy" on your Desktop.
+5. After installation, double-click "Launch Speech Therapy" on your Desktop.
    A console window opens and your browser loads the app automatically.
 
 
 WHAT GETS INSTALLED
 ───────────────────
-  %LOCALAPPDATA%\PPA Therapy\   ← Vite project + app bundle + .env
-  Desktop shortcut              ← "Launch PPA Therapy"
-  Start Menu                    ← Start → PPA Therapy → Launch / Uninstall
+  %LOCALAPPDATA%\Speech Therapy\   ← Vite project + app bundle + .env
+  Desktop shortcut                 ← "Launch Speech Therapy"
+  Start Menu                       ← Start → Speech Therapy → Launch / Uninstall
 
 
 UPDATING
@@ -57,14 +59,14 @@ UPDATING
 Run the installer again with the new bundle file. Choose the same install
 folder and answer Y to overwrite. Your browser data (progress, custom
 content) is stored in the browser — it is not touched by reinstall.
-Download a full backup from Progress → ⚙ Settings before updating.
+Download a full backup from Progress → Settings before updating.
 
 
 UNINSTALLING
 ────────────
-  Start → PPA Therapy → Uninstall PPA Therapy
+  Start → Speech Therapy → Uninstall Speech Therapy
   — or —
-  Delete %LOCALAPPDATA%\PPA Therapy and the Desktop shortcut manually.
+  Delete %LOCALAPPDATA%\Speech Therapy and the Desktop shortcut manually.
 
 Browser data (custom content, session history) is stored separately.
 Clear it from browser Settings → Privacy → Cookies and Site Data if needed.
@@ -83,7 +85,7 @@ TROUBLESHOOTING
     Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 "App won't load / shows API error"
-  Check %LOCALAPPDATA%\PPA Therapy\.env and confirm the key starts
+  Check %LOCALAPPDATA%\Speech Therapy\.env and confirm the key starts
   with sk-ant-api03-...
 
 "Port 5173 already in use"

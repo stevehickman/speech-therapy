@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**`ppa-speech-therapy`** — a browser-based speech therapy suite designed for patients with Primary Progressive Aphasia (PPA). It provides structured word-finding practice, sentence construction, repetition drills, script training, video comprehension, and AI-assisted feedback via Dr. Aria (Claude).
+**`speech-therapy`** — a customisable, browser-based speech-language practice suite for patients with acquired or progressive speech and language disorders (aphasia, PPA, TBI, dementia, and others). It provides structured word-finding practice, sentence construction, repetition drills, script training, video comprehension, and AI-assisted feedback via Dr. Aria (Claude). All content — word lists, scripts, video clips, and tasks — is fully editable by clinicians and caregivers.
 
 **Version:** 4.0.0
 **Stack:** React 18 + Vite 5, ESM modules, no backend — all state in `localStorage`.

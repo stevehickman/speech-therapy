@@ -1,10 +1,10 @@
 @echo off
-title PPA Speech Therapy Suite — Installer
+title Speech Therapy Suite — Installer
 cd /d "%~dp0"
 
 echo.
-echo  PPA Speech Therapy Suite - Windows Installer
-echo  ================================================
+echo  Speech Therapy Suite - Windows Installer
+echo  ==========================================
 echo.
 echo  Starting installer...
 echo.

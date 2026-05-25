@@ -1,7 +1,7 @@
 # =============================================================================
-#  PPA Speech Therapy Suite — Windows Installer
+#  Speech Therapy Suite — Windows Installer
 #  Version 4 · March 2026
-#  Run via: Install PPA Therapy.bat  (included in this package)
+#  Run via: Install Speech Therapy.bat  (included in this package)
 # =============================================================================
 #Requires -Version 5.1
 
@@ -14,9 +14,9 @@ $ErrorActionPreference = "Stop"
 
 # ── Resolve script directory ──────────────────────────────────────────────────
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BundleSrc      = Join-Path $ScriptDir "ppa-speech-therapy-bundle.jsx"
-$UserGuideSrc   = Join-Path $ScriptDir "ppa-speech-therapy-user-guide.pdf"
-$TechDocsSrc    = Join-Path $ScriptDir "ppa-speech-therapy-docs.pdf"
+$BundleSrc      = Join-Path $ScriptDir "speech-therapy-bundle.jsx"
+$UserGuideSrc   = Join-Path $ScriptDir "speech-therapy-user-guide.pdf"
+$TechDocsSrc    = Join-Path $ScriptDir "speech-therapy-docs.pdf"
 
 # ── Console helpers ───────────────────────────────────────────────────────────
 function Write-Hr {
@@ -45,24 +45,24 @@ function Pause-Exit([int]$Code = 0) {
 Clear-Host
 Write-Host ""
 Write-Host "   ╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "   ║      🌿  PPA Speech Therapy Suite  —  Windows Installer     ║" -ForegroundColor Cyan
+Write-Host "   ║        🌿  Speech Therapy Suite  —  Windows Installer       ║" -ForegroundColor Cyan
 Write-Host "   ║                    Version 4  ·  March 2026                 ║" -ForegroundColor Cyan
 Write-Host "   ╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
-Write-Inf "This installer will set up PPA Speech Therapy Suite on your PC."
+Write-Inf "This installer will set up Speech Therapy Suite on your PC."
 Write-Inf "It creates a Vite project, configures your Anthropic API key,"
 Write-Inf "and adds a shortcut to your Desktop and Start Menu."
 Write-Host ""
 
 # ── Verify bundle and docs ────────────────────────────────────────────────────
 if (-not (Test-Path $BundleSrc)) {
-    Write-Err "ppa-speech-therapy-bundle.jsx not found next to the installer."
+    Write-Err "speech-therapy-bundle.jsx not found next to the installer."
     Write-Inf "Please make sure all installer files are in the same folder."
     Pause-Exit 1
 }
 if (-not (Test-Path $UserGuideSrc) -or -not (Test-Path $TechDocsSrc)) {
     Write-Err "PDF documentation files not found next to the installer."
-    Write-Inf "Please make sure ppa-speech-therapy-user-guide.pdf and ppa-speech-therapy-docs.pdf"
+    Write-Inf "Please make sure speech-therapy-user-guide.pdf and speech-therapy-docs.pdf"
     Write-Inf "are in the same folder as the installer and try again."
     Pause-Exit 1
 }
@@ -221,7 +221,7 @@ if (-not $NpmOk) {
 Write-Hdr "Step 2 of 5 — Choose install location"
 # =============================================================================
 
-$DefaultDir = Join-Path $env:LOCALAPPDATA "PPA Therapy"
+$DefaultDir = Join-Path $env:LOCALAPPDATA "Speech Therapy"
 Write-Host "  ▶  Install folder [$DefaultDir]: " -NoNewline
 $UserDir = Read-Host
 if ([string]::IsNullOrWhiteSpace($UserDir)) { $InstallDir = $DefaultDir }
@@ -281,17 +281,17 @@ Write-Ok "Vite project created"
 
 # ── Copy bundle ───────────────────────────────────────────────────────────────
 New-Item -ItemType Directory -Path (Join-Path $InstallDir "src") -Force | Out-Null
-Copy-Item $BundleSrc (Join-Path $InstallDir "src\ppa-speech-therapy-bundle.jsx") -Force
+Copy-Item $BundleSrc (Join-Path $InstallDir "src\speech-therapy-bundle.jsx") -Force
 Write-Ok "Bundle copied to src\"
 
 # ── Copy documentation PDFs ───────────────────────────────────────────────────
-Copy-Item $UserGuideSrc (Join-Path $InstallDir "ppa-speech-therapy-user-guide.pdf") -Force
-Copy-Item $TechDocsSrc  (Join-Path $InstallDir "ppa-speech-therapy-docs.pdf") -Force
+Copy-Item $UserGuideSrc (Join-Path $InstallDir "speech-therapy-user-guide.pdf") -Force
+Copy-Item $TechDocsSrc  (Join-Path $InstallDir "speech-therapy-docs.pdf") -Force
 Write-Ok "Documentation PDFs copied"
 
 # ── Patch App.jsx ─────────────────────────────────────────────────────────────
 @"
-import App from './ppa-speech-therapy-bundle.jsx';
+import App from './speech-therapy-bundle.jsx';
 export default App;
 "@ | Set-Content (Join-Path $InstallDir "src\App.jsx") -Encoding UTF8
 Write-Ok "src\App.jsx configured"
@@ -300,7 +300,7 @@ Write-Ok "src\App.jsx configured"
 
 # ── Write .env ────────────────────────────────────────────────────────────────
 @"
-# PPA Speech Therapy Suite — Anthropic API key
+# Speech Therapy Suite — Anthropic API key
 # Get your key at: https://console.anthropic.com
 VITE_ANTHROPIC_API_KEY=$ApiKey
 "@ | Set-Content (Join-Path $InstallDir ".env") -Encoding UTF8
@@ -358,7 +358,7 @@ $PinnedNpmCmd = $NpmCmd                      # e.g. C:\Program Files\nodejs\npm.
 
 @"
 @echo off
-title PPA Speech Therapy Suite
+title Speech Therapy Suite
 cd /d "$InstallDir"
 
 REM ── Pinned Node/npm paths (set by installer) ──────────────────────────────
@@ -379,7 +379,7 @@ if exist "%PINNED_NODE_DIR%\node.exe" (
 REM Kill any existing process on port 5173
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":5173"') do taskkill /f /pid %%a 2>nul
 
-echo Starting PPA Speech Therapy Suite...
+echo Starting Speech Therapy Suite...
 echo Browser will open at http://localhost:5173
 echo Close this window or press Ctrl+C to stop the server.
 echo.
@@ -392,40 +392,40 @@ start /min "" cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:5173"
 
 # ── Desktop shortcut ─────────────────────────────────────────────────────────
 $WshShell  = New-Object -ComObject WScript.Shell
-$Shortcut  = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\Launch PPA Therapy.lnk")
+$Shortcut  = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\Launch Speech Therapy.lnk")
 $Shortcut.TargetPath       = $LauncherBat
 $Shortcut.WorkingDirectory = $InstallDir
-$Shortcut.Description      = "PPA Speech Therapy Suite"
+$Shortcut.Description      = "Speech Therapy Suite"
 $Shortcut.IconLocation     = "%SystemRoot%\System32\SHELL32.dll,13"  # computer icon
 $Shortcut.WindowStyle      = 1
 $Shortcut.Save()
 Write-Ok "Desktop shortcut created"
 
 # ── Start Menu entry ──────────────────────────────────────────────────────────
-$StartMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\PPA Therapy"
+$StartMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Speech Therapy"
 New-Item -ItemType Directory -Path $StartMenuDir -Force | Out-Null
 
-$StartShortcut  = $WshShell.CreateShortcut("$StartMenuDir\Launch PPA Therapy.lnk")
+$StartShortcut  = $WshShell.CreateShortcut("$StartMenuDir\Launch Speech Therapy.lnk")
 $StartShortcut.TargetPath       = $LauncherBat
 $StartShortcut.WorkingDirectory = $InstallDir
-$StartShortcut.Description      = "PPA Speech Therapy Suite"
+$StartShortcut.Description      = "Speech Therapy Suite"
 $StartShortcut.IconLocation     = "%SystemRoot%\System32\SHELL32.dll,13"
 $StartShortcut.WindowStyle      = 1
 $StartShortcut.Save()
-Write-Ok "Start Menu entry created  (Start → PPA Therapy → Launch PPA Therapy)"
+Write-Ok "Start Menu entry created  (Start → Speech Therapy → Launch Speech Therapy)"
 
 # Also add an Uninstall shortcut to Start Menu
 $UninstallBat = Join-Path $InstallDir "uninstall.bat"
 @"
 @echo off
-title PPA Therapy — Uninstaller
-echo This will remove PPA Speech Therapy Suite.
+title Speech Therapy — Uninstaller
+echo This will remove Speech Therapy Suite.
 echo Your browser data (progress, custom content) will NOT be deleted.
 echo.
-set /p CONFIRM=Type YES to confirm uninstall: 
+set /p CONFIRM=Type YES to confirm uninstall:
 if /i not "%CONFIRM%"=="YES" goto :cancel
 rmdir /s /q "$InstallDir"
-del /f "%USERPROFILE%\Desktop\Launch PPA Therapy.lnk" 2>nul
+del /f "%USERPROFILE%\Desktop\Launch Speech Therapy.lnk" 2>nul
 rmdir /s /q "$StartMenuDir" 2>nul
 echo.
 echo Uninstall complete.
@@ -436,10 +436,10 @@ echo Cancelled.
 pause
 "@ | Set-Content $UninstallBat -Encoding ASCII
 
-$UninstallShortcut  = $WshShell.CreateShortcut("$StartMenuDir\Uninstall PPA Therapy.lnk")
+$UninstallShortcut  = $WshShell.CreateShortcut("$StartMenuDir\Uninstall Speech Therapy.lnk")
 $UninstallShortcut.TargetPath       = $UninstallBat
 $UninstallShortcut.WorkingDirectory = $InstallDir
-$UninstallShortcut.Description      = "Uninstall PPA Speech Therapy Suite"
+$UninstallShortcut.Description      = "Uninstall Speech Therapy Suite"
 $UninstallShortcut.IconLocation     = "%SystemRoot%\System32\SHELL32.dll,131"
 $UninstallShortcut.WindowStyle      = 1
 $UninstallShortcut.Save()
@@ -452,8 +452,8 @@ Write-Host "  🎉  Installation complete!" -ForegroundColor Green
 Write-Hr
 Write-Host ""
 Write-Inf "Installed to:   $InstallDir"
-Write-Inf "Desktop icon:   Launch PPA Therapy"
-Write-Inf "Start Menu:     Start → PPA Therapy → Launch PPA Therapy"
+Write-Inf "Desktop icon:   Launch Speech Therapy"
+Write-Inf "Start Menu:     Start → Speech Therapy → Launch Speech Therapy"
 Write-Host ""
 
 if ([string]::IsNullOrWhiteSpace($ApiKey)) {
@@ -462,7 +462,7 @@ if ([string]::IsNullOrWhiteSpace($ApiKey)) {
     Write-Host ""
 }
 
-Write-Inf "To start the app: double-click 'Launch PPA Therapy' on your Desktop."
+Write-Inf "To start the app: double-click 'Launch Speech Therapy' on your Desktop."
 Write-Host ""
 
 Write-Host "  ▶  Launch now? (Y/n): " -NoNewline

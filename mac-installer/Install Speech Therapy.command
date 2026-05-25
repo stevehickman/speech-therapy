@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-#  PPA Speech Therapy Suite — macOS Installer
+#  Speech Therapy Suite — macOS Installer
 #  Double-click this file to install.
 # ─────────────────────────────────────────────────────────────────────────────
 

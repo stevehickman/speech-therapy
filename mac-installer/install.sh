@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-#  PPA Speech Therapy Suite — macOS Installer
+#  Speech Therapy Suite — macOS Installer
 #  Version 4 · March 2026
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 # ── Resolve the directory that contains this script and the bundle ────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUNDLE_SRC="$SCRIPT_DIR/ppa-speech-therapy-bundle.jsx"
-USER_GUIDE_SRC="$SCRIPT_DIR/ppa-speech-therapy-user-guide.pdf"
-TECH_DOCS_SRC="$SCRIPT_DIR/ppa-speech-therapy-docs.pdf"
+BUNDLE_SRC="$SCRIPT_DIR/speech-therapy-bundle.jsx"
+USER_GUIDE_SRC="$SCRIPT_DIR/speech-therapy-user-guide.pdf"
+TECH_DOCS_SRC="$SCRIPT_DIR/speech-therapy-docs.pdf"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 BOLD='\033[1m'
@@ -34,25 +34,25 @@ echo
 printf "${TEAL}${BOLD}"
 cat <<'BANNER'
    ╔══════════════════════════════════════════════════════════════╗
-   ║         🌿  PPA Speech Therapy Suite  —  macOS Installer    ║
+   ║           🌿  Speech Therapy Suite  —  macOS Installer      ║
    ║                       Version 4  ·  March 2026              ║
    ╚══════════════════════════════════════════════════════════════╝
 BANNER
 printf "${NC}\n"
-inf "This installer will set up PPA Speech Therapy Suite on your Mac."
+inf "This installer will set up Speech Therapy Suite on your Mac."
 inf "It creates a Vite project, configures your Anthropic API key,"
 inf "and adds a Launch icon to your Desktop."
 echo
 
 # ── Verify bundle and docs are present ────────────────────────────────────────
 if [[ ! -f "$BUNDLE_SRC" ]]; then
-  err "ppa-speech-therapy-bundle.jsx not found next to the installer."
+  err "speech-therapy-bundle.jsx not found next to the installer."
   inf "Please make sure all installer files are in the same folder and try again."
   echo; read -r -p "  Press Return to close…"; exit 1
 fi
 if [[ ! -f "$USER_GUIDE_SRC" || ! -f "$TECH_DOCS_SRC" ]]; then
   err "PDF documentation files not found next to the installer."
-  inf "Please make sure ppa-speech-therapy-user-guide.pdf and ppa-speech-therapy-docs.pdf"
+  inf "Please make sure speech-therapy-user-guide.pdf and speech-therapy-docs.pdf"
   inf "are in the same folder as the installer and try again."
   echo; read -r -p "  Press Return to close…"; exit 1
 fi
@@ -200,7 +200,7 @@ ok "Xcode command-line tools present"
 hdr "Step 2 of 5 — Choose install location"
 # ─────────────────────────────────────────────────────────────────────────────
 
-DEFAULT_DIR="$HOME/PPA Therapy"
+DEFAULT_DIR="$HOME/Speech Therapy"
 ask "Install folder [${DEFAULT_DIR}]:"
 read -r USER_DIR
 INSTALL_DIR="${USER_DIR:-$DEFAULT_DIR}"
@@ -254,17 +254,17 @@ ok "Vite project created"
 
 # ── Copy bundle ───────────────────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR/src"
-cp "$BUNDLE_SRC" "$INSTALL_DIR/src/ppa-speech-therapy-bundle.jsx"
+cp "$BUNDLE_SRC" "$INSTALL_DIR/src/speech-therapy-bundle.jsx"
 ok "Bundle copied to src/"
 
 # ── Copy documentation PDFs ───────────────────────────────────────────────────
-cp "$USER_GUIDE_SRC" "$INSTALL_DIR/ppa-speech-therapy-user-guide.pdf"
-cp "$TECH_DOCS_SRC"  "$INSTALL_DIR/ppa-speech-therapy-docs.pdf"
+cp "$USER_GUIDE_SRC" "$INSTALL_DIR/speech-therapy-user-guide.pdf"
+cp "$TECH_DOCS_SRC"  "$INSTALL_DIR/speech-therapy-docs.pdf"
 ok "Documentation PDFs copied"
 
 # ── Patch App.jsx ─────────────────────────────────────────────────────────────
 cat > "$INSTALL_DIR/src/App.jsx" <<'APPJSX'
-import App from './ppa-speech-therapy-bundle.jsx';
+import App from './speech-therapy-bundle.jsx';
 export default App;
 APPJSX
 ok "src/App.jsx configured"
@@ -273,7 +273,7 @@ ok "src/App.jsx configured"
 
 # ── Write .env ────────────────────────────────────────────────────────────────
 cat > "$INSTALL_DIR/.env" <<ENVFILE
-# PPA Speech Therapy Suite — Anthropic API key
+# Speech Therapy Suite — Anthropic API key
 # Get your key at: https://console.anthropic.com
 VITE_ANTHROPIC_API_KEY=$API_KEY
 ENVFILE
@@ -321,14 +321,14 @@ fi
 hdr "Step 5 of 5 — Creating Desktop launcher"
 # ─────────────────────────────────────────────────────────────────────────────
 
-LAUNCHER="$HOME/Desktop/Launch PPA Therapy.command"
+LAUNCHER="$HOME/Desktop/Launch Speech Therapy.command"
 
 # NODE_CMD and NPM_CMD are baked in at install time so this launcher always
 # uses the exact same Node/npm version that was used to set up the project,
 # even if the user later installs additional Node versions.
 cat > "$LAUNCHER" <<LAUNCHER
 #!/usr/bin/env bash
-# PPA Speech Therapy Suite — Desktop Launcher
+# Speech Therapy Suite — Desktop Launcher
 
 INSTALL_DIR="$INSTALL_DIR"
 
@@ -355,7 +355,7 @@ fi
 
 # Check app is still there
 if [[ ! -d "\$INSTALL_DIR" ]]; then
-  osascript -e 'display alert "PPA Therapy folder not found" message "Expected at: $INSTALL_DIR\n\nRe-run the installer to set up again." as warning'
+  osascript -e 'display alert "Speech Therapy folder not found" message "Expected at: $INSTALL_DIR\n\nRe-run the installer to set up again." as warning'
   exit 1
 fi
 
@@ -363,7 +363,7 @@ fi
 lsof -ti:5173 | xargs kill -9 2>/dev/null || true
 
 cd "\$INSTALL_DIR"
-echo "Starting PPA Speech Therapy Suite…"
+echo "Starting Speech Therapy Suite…"
 echo "Node:  \$(node --version 2>/dev/null)  (\$(command -v node))"
 echo "npm:   \$("\$NPM_RUN" --version 2>/dev/null)  (\$NPM_RUN)"
 echo "Opening browser at http://localhost:5173"
@@ -377,7 +377,7 @@ echo
 LAUNCHER
 
 chmod +x "$LAUNCHER"
-ok "Desktop launcher created: ~/Desktop/Launch PPA Therapy.command"
+ok "Desktop launcher created: ~/Desktop/Launch Speech Therapy.command"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo
@@ -386,14 +386,14 @@ printf "${GREEN}${BOLD}  🎉  Installation complete!${NC}\n"
 hr
 echo
 inf "Installed to:   $INSTALL_DIR"
-inf "Desktop icon:   Launch PPA Therapy.command"
+inf "Desktop icon:   Launch Speech Therapy.command"
 echo
 if [[ -z "$API_KEY" ]]; then
   warn "No API key was entered — the app will prompt for it on first launch."
   inf "  Or edit $INSTALL_DIR/.env and add: VITE_ANTHROPIC_API_KEY=sk-ant-..."
   echo
 fi
-inf "To start the app:  double-click 'Launch PPA Therapy' on your Desktop"
+inf "To start the app:  double-click 'Launch Speech Therapy' on your Desktop"
 inf "To update the app: re-run this installer (settings and data are preserved"
 inf "                   if you keep the same install folder and answer 'y' to overwrite)."
 echo

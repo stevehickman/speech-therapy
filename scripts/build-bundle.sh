@@ -7,9 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUNDLE_SCRIPT="$REPO_ROOT/ppa-source/bundle.js"
-BUNDLE_OUTPUT="$REPO_ROOT/ppa-source/ppa-speech-therapy-bundle.jsx"
-MAC_BUNDLE="$REPO_ROOT/mac-installer/ppa-speech-therapy-bundle.jsx"
-WIN_BUNDLE="$REPO_ROOT/win-installer/ppa-speech-therapy-bundle.jsx"
+BUNDLE_OUTPUT="$REPO_ROOT/ppa-source/speech-therapy-bundle.jsx"
+MAC_BUNDLE="$REPO_ROOT/mac-installer/speech-therapy-bundle.jsx"
+WIN_BUNDLE="$REPO_ROOT/win-installer/speech-therapy-bundle.jsx"
 MAC_INSTALL="$REPO_ROOT/mac-installer/install.sh"
 WIN_INSTALL="$REPO_ROOT/win-installer/install.ps1"
 
