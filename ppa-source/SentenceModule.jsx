@@ -55,6 +55,15 @@ export default function SentenceModule({ addToLog, conditionType = DEFAULT_CONDI
   const [pendingAI, setPendingAI] = useState(null);
   const [taskIdx, setTaskIdx] = useState(0);
 
+  // ── bonus round (construction only) ────────────────────────────────────────
+  const [bonusInput, setBonusInput] = useState("");
+  const [bonusFeedback, setBonusFeedback] = useState("");
+  const [loadingBonusAI, setLoadingBonusAI] = useState(false);
+  const [pendingBonusAI, setPendingBonusAI] = useState(null);
+  const [bonusSkipped, setBonusSkipped] = useState(false);
+  // True once the patient has either received bonus feedback or skipped it
+  const bonusDone = bonusFeedback !== "" || bonusSkipped;
+
   // ── adaptive word ordering — diagnosis-aware ────────────────────────────────
   // Continuous float 0.0–2.0; displayed as Supported / Standard / Challenge.
   // On each app load the stored level decays toward 0 using the condition's
@@ -190,12 +199,23 @@ export default function SentenceModule({ addToLog, conditionType = DEFAULT_CONDI
     setLoadingAI(true);
     const prompt = mode === "completion"
       ? `Patient was given sentence stem: "${task.prompt}" and completed it with: "${input}". Provide brief, warm clinical feedback on their sentence completion (grammar, meaning, fluency). 2-3 sentences max.`
-      : `Patient was asked to construct a sentence using words: [${task.words?.join(", ")}]. Their sentence was: "${input}". Provide brief warm feedback on word order, grammar, meaning. 2-3 sentences.`;
+      : `Patient was asked to construct a sentence using these words: [${task.words?.join(", ")}]. Any grammatically correct sentence that uses some or all of these words is valid — multiple correct answers are possible. Their sentence was: "${input}". Provide brief, warm clinical feedback on word order, grammar, and meaning. 2-3 sentences.`;
     setPendingAI([{ role: "user", content: prompt }]);
     addToLog({ type: "sentence", mode, input, time: new Date().toLocaleTimeString() });
   };
 
-  const next = () => { setTaskIdx(i => i + 1); setInput(""); setFeedback(""); setPendingAI(null); };
+  const next = () => {
+    setTaskIdx(i => i + 1);
+    setInput(""); setFeedback(""); setPendingAI(null);
+    setBonusInput(""); setBonusFeedback(""); setLoadingBonusAI(false); setPendingBonusAI(null); setBonusSkipped(false);
+  };
+
+  const getBonusFeedback = () => {
+    if (!bonusInput.trim()) return;
+    setLoadingBonusAI(true);
+    const prompt = `Patient was given these words to build sentences with: [${task.words?.join(", ")}]. Any grammatically correct sentence using some or all of these words is valid. Their first sentence was: "${input}". For a bonus challenge they tried a second different sentence: "${bonusInput}". Evaluate whether this is a valid, different sentence from the same words. Provide warm, encouraging clinical feedback. 2-3 sentences.`;
+    setPendingBonusAI([{ role: "user", content: prompt }]);
+  };
 
   // ── textarea ref + word-insertion helpers ───────────────────────────────────
   const textareaRef = useRef(null);
@@ -492,6 +512,7 @@ export default function SentenceModule({ addToLog, conditionType = DEFAULT_CONDI
   return (
     <div style={{ position: "relative", padding: 24, maxWidth: 600, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
       {pendingAI && <CallAPI messages={pendingAI} onResult={t => { setFeedback(t); setLoadingAI(false); setPendingAI(null); }} onError={() => { setLoadingAI(false); setPendingAI(null); }} />}
+      {pendingBonusAI && <CallAPI messages={pendingBonusAI} onResult={t => { setBonusFeedback(t); setLoadingBonusAI(false); setPendingBonusAI(null); }} onError={() => { setBonusFeedback("Well done — every extra sentence is great practice!"); setLoadingBonusAI(false); setPendingBonusAI(null); }} />}
 
       {/* Admin gear */}
       <button onClick={openAdmin} title="Admin: manage sentence tasks"
@@ -568,7 +589,50 @@ export default function SentenceModule({ addToLog, conditionType = DEFAULT_CONDI
         <div style={{ background: "#F0F7F5", borderRadius: 14, padding: "16px 20px", border: "1px solid #B0D4CE" }}>
           <div style={{ fontSize: 13, color: "#4E8B80", fontWeight: 600, marginBottom: 6 }}>🧠 Dr. Aria's Feedback</div>
           {loadingAI ? <ThinkingDots /> : <div style={{ fontSize: 16, color: "#2D3B36", lineHeight: 1.6 }}>{feedback}</div>}
-          {feedback && mode === "construction" && (
+
+          {/* ── Bonus challenge (construction only) — shown before the rating buttons ── */}
+          {feedback && mode === "construction" && !bonusDone && (
+            <div style={{ marginTop: 14, background: "#FFF8E8", borderRadius: 12, padding: "16px 18px", border: "2px solid #D4A843" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#B8880A", marginBottom: 4 }}>⭐ Bonus Challenge!</div>
+              <div style={{ fontSize: 14, color: "#665500", marginBottom: 10 }}>Can you make a <em>different</em> sentence using the same words?</div>
+              <textarea
+                value={bonusInput}
+                onChange={e => setBonusInput(e.target.value)}
+                placeholder="Try another sentence..."
+                rows={2}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "2px solid #E8D0A0", fontSize: 16, resize: "none", background: "#FFFDF9", fontFamily: "inherit", color: "#2D3B36", outline: "none", boxSizing: "border-box" }}
+              />
+              {loadingBonusAI ? (
+                <div style={{ marginTop: 8 }}><ThinkingDots /></div>
+              ) : (
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button onClick={getBonusFeedback}
+                    style={{ padding: "9px 18px", background: "linear-gradient(135deg, #D4A843, #B8880A)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 14, transition: "all 0.15s" }}
+                    onMouseOver={e => e.currentTarget.style.opacity = "0.85"}
+                    onMouseOut={e => e.currentTarget.style.opacity = "1"}>
+                    ⭐ Try Bonus!
+                  </button>
+                  <button onClick={() => setBonusSkipped(true)}
+                    style={{ padding: "9px 14px", background: "#F5F0E8", color: "#888", border: "2px solid #D5CFC4", borderRadius: 10, cursor: "pointer", fontWeight: 600, fontSize: 14, transition: "all 0.15s" }}
+                    onMouseOver={e => { e.currentTarget.style.background = "#E8E0D0"; e.currentTarget.style.color = "#555"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = "#F5F0E8"; e.currentTarget.style.color = "#888"; }}>
+                    Skip →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bonus feedback */}
+          {bonusFeedback && (
+            <div style={{ marginTop: 10, background: "#F5F0FF", borderRadius: 12, padding: "14px 18px", border: "1px solid #C4B0E0" }}>
+              <div style={{ fontSize: 13, color: "#7A5AB8", fontWeight: 600, marginBottom: 6 }}>🌟 Bonus Feedback</div>
+              <div style={{ fontSize: 15, color: "#2D3B36", lineHeight: 1.6 }}>{bonusFeedback}</div>
+            </div>
+          )}
+
+          {/* Rating buttons — only after bonus is done (tried or skipped) */}
+          {feedback && mode === "construction" && bonusDone && (
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>How did that feel? (adjusts word order next time)</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -593,6 +657,7 @@ export default function SentenceModule({ addToLog, conditionType = DEFAULT_CONDI
               </div>
             </div>
           )}
+
           {feedback && mode !== "construction" && (
             <button onClick={next} style={{ marginTop: 12, padding: "10px 20px", background: "linear-gradient(135deg, #4E8B80, #3A7A6F)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 15 }}>Next task →</button>
           )}
