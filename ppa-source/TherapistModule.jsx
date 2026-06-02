@@ -24,7 +24,9 @@ export default function TherapistModule({ sessionLog, addToLog }) {
     setInput("");
     setLoading(true);
     setPendingMessages(newMsgs);
-    addToLog({ type: "chat", content: input.trim(), time: new Date().toLocaleTimeString() });
+    // Log only the event marker — never the verbatim message (PHI).
+    // Full conversation lives in component state and is discarded on unmount.
+    addToLog({ type: "chat", result: "sent", time: new Date().toLocaleTimeString() });
   };
 
   return (
