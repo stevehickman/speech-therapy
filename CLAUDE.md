@@ -70,7 +70,7 @@ The Anthropic API key is stored in **`sessionStorage`** (key `ppa_api_key`) so i
 **Never store the key in `localStorage`** — sessionStorage is intentional. The migration path in `getApiKey()` exists only for users upgrading from an older build.
 
 ### `fetchAnthropicApi(body, signal?)`
-Low-level async helper. Applies all required headers (`x-api-key`, `anthropic-version`, `anthropic-dangerous-direct-browser-access`). Returns parsed JSON. Throws on network error or abort. Use this for fire-and-forget calls (e.g. emoji lookup in SentenceBuilder).
+Low-level async helper. Applies all required headers (`x-api-key`, `anthropic-version`, `anthropic-dangerous-direct-browser-access`). Returns parsed JSON. Throws on network error, abort, **or non-OK HTTP status** (4xx/5xx) — the error message comes from the Anthropic error body so callers can surface auth failures to caregivers. Use this for fire-and-forget calls (e.g. emoji lookup in SentenceBuilder).
 
 ### `<CallAPI messages onResult onError system?>`
 React component that fires one API request on mount and calls `onResult(text)` or `onError(err)` exactly once. Uses `AbortController` — the request is cancelled automatically on unmount. `onResult` always receives a non-empty string (falls back to `"Well done — keep going!"`). Mount it conditionally: `{pendingAI && <CallAPI … />}`.
@@ -88,8 +88,8 @@ The module has two practice modes toggled by tabs at the top of the view:
 
 | Mode | Tab | Items source | SR key | Admin access |
 |---|---|---|---|---|
-| **Standard** | 📚 Standard | `dictLoadNamingItems()` → `ppa_naming_items` | `ppa_naming_sr` | ⚙️ gear button — PIN-gated (`ADMIN_PIN`) |
-| **Personal Photos** | 📸 My photos | `ppa_personal_items` | `ppa_personal_sr` | ✏️ pencil button — no PIN (patient/family-facing) |
+| **Standard** | 📚 Standard | `dictLoadNamingItems()` → `ppa_naming_items` | `ppa_naming_sr` | ⚙️ gear button — caregiver PIN |
+| **Personal Photos** | 📸 My photos | `ppa_personal_items` | `ppa_personal_sr` | ✏️ pencil button — caregiver PIN |
 
 Switching modes remounts `<Practice key={…}>` so each mode starts with its own independent SR state. The `Practice` component accepts a `srKey` prop (defaults to `SR_KEY`) and threads it through all `srLoad` / `srSave` / `srLoadOrBootstrap` calls.
 
@@ -169,7 +169,7 @@ Personal clip metadata is stored in `ppa_personal_videos` (localStorage). Binary
 ## Export / Import System (`ExportImportSystem.jsx`)
 
 - **`.ppa` files** — per-module item exports (naming items, scripts, sentences, etc.). Format: `{ ppaExport: true, moduleId, items: [...] }`.
-- **`.ppabak` files** — full-app backup of all `ppa_*` localStorage keys. Restoring reloads the page.
+- **`.ppabak` files** — full-app backup of all `ppa_*` and `fam_*` localStorage keys. Restoring reloads the page. The restore function (`ppaDoRestore`) validates that every key starts with `ppa_` or `fam_` and caps each value at 10 MB — crafted backup files cannot inject foreign keys or override `ppa_caregiver_pin`.
 - All public functions and components are named exports. The main app and each module import only what they need.
 
 ---
@@ -186,16 +186,17 @@ Three actors interact with the therapy ecosystem. The **client app** (this codeb
 
 ### PIN components (`AdminPinEntry.jsx`)
 
+`ADMIN_PIN` and `AdminPinEntry` have been **removed from this file and from all client bundles**. They belong exclusively to the clinician app (separate codebase). The client app exports only the caregiver-facing symbols below.
+
 | Export | Purpose |
 |---|---|
-| `ADMIN_PIN` / `AdminPinEntry` | **Clinician app only** — not imported by any client-app module |
 | `CAREGIVER_PIN_KEY` | localStorage key for caregiver PIN hash |
 | `DEFAULT_CAREGIVER_PIN` | `"0000"` |
 | `checkCaregiverPin(pin)` | **async** — compare plaintext input against stored SHA-256 hash; migrates legacy plaintext on first match |
 | `setCaregiverPin(pin)` | **async** — hashes pin via SHA-256 then writes to localStorage |
 | `isCaregiverPinDefault()` | **async** — returns true when the stored hash matches `DEFAULT_CAREGIVER_PIN` |
-| `CaregiverPinEntry` | Caregiver gate component (purple-themed, shows default-PIN warning) |
-| `ChangeCaregiverPinForm` | Inline form for changing caregiver PIN; embed in any caregiver panel header |
+| `CaregiverPinEntry` | Caregiver gate component. When the default PIN (0000) is still active, a successful unlock is **blocked** until the caregiver sets a personal PIN via `ChangeCaregiverPinForm` — the warning is a required action, not a dismissable banner. |
+| `ChangeCaregiverPinForm` | Inline form for changing caregiver PIN. Accepts `skipCurrentCheck` prop (boolean, default `false`) — pass `true` when the caller already verified the current PIN so the user isn't prompted for it twice. |
 
 > **PIN storage:** the caregiver PIN is stored as a SHA-256 hex digest, never as plaintext. `checkCaregiverPin` handles automatic migration for any user upgrading from a pre-hash build — their plaintext PIN is hashed and re-stored on first successful login.
 
@@ -234,7 +235,7 @@ Key design constraints:
 - **Bidirectional transport.** Content flows clinician → client; anonymised practice results flow client → clinician via the same relay. Personal caregiver-added content never leaves the device.
 - **Merge semantics.** Same de-duplication logic as existing `.ppa` imports — same-`id` items update in place; new items appended; caregiver-side custom items are untouched and invisible to the clinician.
 - **Content provenance.** Items sourced from a clinician bundle carry `_sourceType: "clinician"` so the caregiver panel can show their origin and the client can re-send updated results correctly.
-- **No clinician PIN in the client app.** All content-management gates in the client app use the caregiver PIN. `ADMIN_PIN` and `AdminPinEntry` exist only in `AdminPinEntry.jsx` for use by the clinician app and must not be imported by any client-app module.
+- **No clinician PIN in the client app.** All content-management gates in the client app use the caregiver PIN. `ADMIN_PIN` and `AdminPinEntry` have been removed from the client-app codebase entirely — they must never reappear in `ppa-source/`, `mac-installer/`, or `win-installer/` bundles. They live only in the clinician app.
 
 ---
 
@@ -244,7 +245,7 @@ Key design constraints:
 - **API key exception.** `ppa_api_key` is stored in **`sessionStorage`**, not localStorage, so it clears when the tab closes. Use `getApiKey()` / `setApiKey()` from `shared.jsx` — never access it directly.
 - **Shared code belongs in `shared.jsx`.** Any utility used by more than one module goes there.
 - **Exported constants, not magic strings.** localStorage keys, file extensions, and result type strings are defined once and imported where needed.
-- **Clinician PIN** (`ADMIN_PIN = "1234"` in `AdminPinEntry.jsx`) is for the **clinician app only** — not used in the client app. All content-management gates in the client app use the **caregiver PIN** (`CaregiverPinEntry`, stored as SHA-256 hash in `ppa_caregiver_pin`).
+- **No clinician PIN in the client app.** `ADMIN_PIN` and `AdminPinEntry` have been removed from all client bundles. All content-management gates use the **caregiver PIN** (`CaregiverPinEntry`, stored as SHA-256 hash in `ppa_caregiver_pin`). Never re-add `ADMIN_PIN` to any file under `ppa-source/`, `mac-installer/`, or `win-installer/`.
 - **`VITE_ANTHROPIC_API_KEY`** must be in `.env` — never hardcoded.
 - **React StrictMode is active** in development (`src/main.jsx`). Effects run twice; always use cleanup functions.
 
@@ -254,7 +255,12 @@ Several design decisions are intentional privacy controls — don't remove them 
 
 - **sessionStorage for API key** — cleared on tab close, limiting exposure to XSS or extension attacks. See `shared.jsx`.
 - **Caregiver PIN hashed** — stored as SHA-256, never plaintext. See `AdminPinEntry.jsx`. Migration from plaintext is handled automatically in `checkCaregiverPin`.
+- **Forced PIN change on first unlock** — `CaregiverPinEntry` blocks access behind `ChangeCaregiverPinForm` when `isCaregiverPinDefault()` is true. The default PIN (0000) is trivially guessable; the gate makes changing it a required action, not an optional recommendation.
 - **Therapist module detail defaults to `"none"`** in `DEFAULT_PROGRESS_SETTINGS` — verbatim therapy conversations are PHI and must not be included in AI-generated reports without an explicit caregiver opt-in.
-- **Progress data retention** — `ppaRunRetentionPurge()` (exported from `ProgressModule.jsx`) runs on every app mount and deletes `ppa_progress_*` entries older than the configured window (default 90 days). The caregiver can change this in Progress → Settings.
+- **Chat log contains no message content** — `TherapistModule` logs only `{type:'chat', result:'sent'}` to the progress store. The full conversation lives in component state and is discarded on unmount. Never add a `content` field back to these log entries.
+- **`ppaStripChatContent()`** (exported from `ProgressModule.jsx`) runs on every app mount alongside `ppaRunRetentionPurge()`. It scrubs any pre-existing `content` fields from chat log entries written by older app versions, ensuring legacy data doesn't accumulate PHI.
+- **Progress data retention** — `ppaRunRetentionPurge()` runs on every app mount and deletes `ppa_progress_*` entries older than the configured window (default 90 days). The caregiver can change this in Progress → Settings. "Keep all" (unlimited retention) requires an explicit confirmation step — it is not a standard option in the retention picker.
+- **Backup restore key allowlist** — `ppaDoRestore()` only writes back keys that start with `ppa_` or `fam_`, and caps each value at 10 MB. This prevents crafted `.ppabak` files from overriding `ppa_caregiver_pin` or injecting arbitrary values.
+- **Content Security Policy** — `vite.config.js` applies a strict CSP for both the dev server and `npm run preview`. The only permitted outbound connection is `https://api.anthropic.com`. For production deployments, set equivalent headers at the CDN/server layer.
 - **Privacy notice** — shown once on first launch (`ppa_privacy_accepted` flag). Three plain-English bullet points covering on-device storage, Anthropic API transmission, and sharing. Do not skip this gate.
 - **Report disclosure** — an inline amber notice in the Progress Report view describes what data will be sent to Anthropic. If AI Therapist detail is anything other than `"none"`, it names the level explicitly.
