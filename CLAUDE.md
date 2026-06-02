@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **`speech-therapy`** — a customisable, browser-based speech-language practice suite for patients with acquired or progressive speech and language disorders (aphasia, PPA, TBI, dementia, and others). It provides structured word-finding practice, sentence construction, repetition drills, script training, video comprehension, and AI-assisted feedback via Dr. Aria (Claude). All content — word lists, scripts, video clips, and tasks — is fully editable by clinicians and caregivers.
 
 **Version:** 4.0.0
-**Stack:** React 18 + Vite 5, ESM modules, no backend — all state in `localStorage`.
+**Stack:** React 18 + Vite 5, ESM modules, no backend — all persistent state in `localStorage`; the Anthropic API key is kept in `sessionStorage` only (cleared on tab close).
 **AI:** Anthropic Claude API called directly from the browser.
 
 ---
@@ -59,6 +59,15 @@ ppa-source/
 ## Shared Utilities (`shared.jsx`)
 
 All Anthropic API access and the loading indicator live here. **Never duplicate these inline.**
+
+### API key helpers
+The Anthropic API key is stored in **`sessionStorage`** (key `ppa_api_key`) so it is cleared automatically when the browser tab closes. It falls back to the `VITE_ANTHROPIC_API_KEY` build-time env var.
+
+- `getApiKey()` — returns the key from sessionStorage (migrates any legacy localStorage value on first call)
+- `setApiKey(key)` — writes to sessionStorage and removes any localStorage copy
+- `hasApiKey()` — boolean check
+
+**Never store the key in `localStorage`** — sessionStorage is intentional. The migration path in `getApiKey()` exists only for users upgrading from an older build.
 
 ### `fetchAnthropicApi(body, signal?)`
 Low-level async helper. Applies all required headers (`x-api-key`, `anthropic-version`, `anthropic-dangerous-direct-browser-access`). Returns parsed JSON. Throws on network error or abort. Use this for fire-and-forget calls (e.g. emoji lookup in SentenceBuilder).
@@ -180,11 +189,15 @@ Three actors interact with the therapy ecosystem. The **client app** (this codeb
 | Export | Purpose |
 |---|---|
 | `ADMIN_PIN` / `AdminPinEntry` | **Clinician app only** — not imported by any client-app module |
-| `CAREGIVER_PIN_KEY` | localStorage key for caregiver PIN |
+| `CAREGIVER_PIN_KEY` | localStorage key for caregiver PIN hash |
 | `DEFAULT_CAREGIVER_PIN` | `"0000"` |
-| `getCaregiverPin()` / `setCaregiverPin(pin)` | Read/write caregiver PIN |
+| `checkCaregiverPin(pin)` | **async** — compare plaintext input against stored SHA-256 hash; migrates legacy plaintext on first match |
+| `setCaregiverPin(pin)` | **async** — hashes pin via SHA-256 then writes to localStorage |
+| `isCaregiverPinDefault()` | **async** — returns true when the stored hash matches `DEFAULT_CAREGIVER_PIN` |
 | `CaregiverPinEntry` | Caregiver gate component (purple-themed, shows default-PIN warning) |
 | `ChangeCaregiverPinForm` | Inline form for changing caregiver PIN; embed in any caregiver panel header |
+
+> **PIN storage:** the caregiver PIN is stored as a SHA-256 hex digest, never as plaintext. `checkCaregiverPin` handles automatic migration for any user upgrading from a pre-hash build — their plaintext PIN is hashed and re-stored on first successful login.
 
 ### Caregiver-gated areas (all content management in the client app)
 
@@ -227,9 +240,21 @@ Key design constraints:
 
 ## Key Conventions
 
-- **No backend.** All persistence is `localStorage`. Keys are prefixed `ppa_`. Notable keys: `ppa_naming_items` (standard naming list), `ppa_naming_sr` (standard SR state), `ppa_personal_items` (personal photo items), `ppa_personal_sr` (personal SR state), `ppa_personal_videos` (personal video clip metadata), `ppa_video_clips` (custom standard video clips), `ppa_caregiver_pin` (caregiver PIN), `ppa_dictionary` (shared graphic store).
+- **No backend.** All persistent state is `localStorage`. Keys are prefixed `ppa_` or `fam_`. Notable keys: `ppa_naming_items` (standard naming list), `ppa_naming_sr` (standard SR state), `ppa_personal_items` (personal photo items), `ppa_personal_sr` (personal SR state), `ppa_personal_videos` (personal video clip metadata), `ppa_video_clips` (custom standard video clips), `ppa_caregiver_pin` (caregiver PIN — SHA-256 hash), `ppa_dictionary` (shared graphic store), `ppa_privacy_accepted` (privacy notice acknowledgement flag), `ppa_progress_YYYY-MM-DD` (daily session logs — auto-purged per retention policy).
+- **API key exception.** `ppa_api_key` is stored in **`sessionStorage`**, not localStorage, so it clears when the tab closes. Use `getApiKey()` / `setApiKey()` from `shared.jsx` — never access it directly.
 - **Shared code belongs in `shared.jsx`.** Any utility used by more than one module goes there.
 - **Exported constants, not magic strings.** localStorage keys, file extensions, and result type strings are defined once and imported where needed.
-- **Clinician PIN** (`ADMIN_PIN = "1234"` in `AdminPinEntry.jsx`) is for the **clinician app only** — not used in the client app. All content-management gates in the client app use the **caregiver PIN** (`CaregiverPinEntry`, stored in `ppa_caregiver_pin`).
+- **Clinician PIN** (`ADMIN_PIN = "1234"` in `AdminPinEntry.jsx`) is for the **clinician app only** — not used in the client app. All content-management gates in the client app use the **caregiver PIN** (`CaregiverPinEntry`, stored as SHA-256 hash in `ppa_caregiver_pin`).
 - **`VITE_ANTHROPIC_API_KEY`** must be in `.env` — never hardcoded.
 - **React StrictMode is active** in development (`src/main.jsx`). Effects run twice; always use cleanup functions.
+
+## Privacy Architecture
+
+Several design decisions are intentional privacy controls — don't remove them without understanding the rationale:
+
+- **sessionStorage for API key** — cleared on tab close, limiting exposure to XSS or extension attacks. See `shared.jsx`.
+- **Caregiver PIN hashed** — stored as SHA-256, never plaintext. See `AdminPinEntry.jsx`. Migration from plaintext is handled automatically in `checkCaregiverPin`.
+- **Therapist module detail defaults to `"none"`** in `DEFAULT_PROGRESS_SETTINGS` — verbatim therapy conversations are PHI and must not be included in AI-generated reports without an explicit caregiver opt-in.
+- **Progress data retention** — `ppaRunRetentionPurge()` (exported from `ProgressModule.jsx`) runs on every app mount and deletes `ppa_progress_*` entries older than the configured window (default 90 days). The caregiver can change this in Progress → Settings.
+- **Privacy notice** — shown once on first launch (`ppa_privacy_accepted` flag). Three plain-English bullet points covering on-device storage, Anthropic API transmission, and sharing. Do not skip this gate.
+- **Report disclosure** — an inline amber notice in the Progress Report view describes what data will be sent to Anthropic. If AI Therapist detail is anything other than `"none"`, it names the level explicitly.
