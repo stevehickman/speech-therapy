@@ -1,34 +1,101 @@
 /**
  * Familiar — Clinician Dashboard
  *
- * Architecture:
- *   - Fully local-first. All patient data is stored in window.storage on
- *     the clinician's device. Nothing is sent to any server except encrypted
- *     packets routed through the zero-knowledge relay.
- *   - Keypair is generated once on setup using libsodium crypto_box_keypair().
- *     The private key never leaves this device.
- *   - Outbound result packets from patients are decrypted locally using the
- *     clinician's private key. The relay sees only ciphertext.
- *   - Inbound assignments/messages to patients are encrypted with the patient's
- *     public key (received at registration time) before being sent to the relay.
+ * Security architecture:
+ *
+ *  KEY MANAGEMENT
+ *   - NaCl crypto_box keypair generated once on setup via libsodium (npm ES module,
+ *     bundled by Vite — no dynamic script injection, no window.sodium global).
+ *   - secretKey wrapped with AES-GCM using a PBKDF2-derived KEK (600 000 iters).
+ *     Only { wrappedSecretKey, salt, iv } are persisted. Plaintext secretKey
+ *     lives in React state (_secretKeyBytes) only and is cleared on every lock.
+ *   - A separate DEK (data-encryption key) is derived from the same passphrase
+ *     with an independent dataSalt. _dataKey is a module-level CryptoKey cleared
+ *     on lock alongside _secretKeyBytes.
+ *
+ *  DATA AT REST  (window.storage)
+ *   - familiar_meta   plaintext  { keypair, relay_base_url, migration_complete? }
+ *   - familiar_data   AES-GCM    { patients, settings }
+ *   - familiar_audit  AES-GCM    [{ ts, patient_id, action }]  (cap 500)
+ *   - familiar_clinician  null   (zeroed on first unlock post-migration)
+ *
+ *  RELAY TRANSPORT
+ *   - Zero-knowledge relay: only ciphertext transits; relay stores no plaintext.
+ *   - Inbound (clinician → patient): encrypted with patient's pubkey.
+ *   - Outbound (patient → clinician): encrypted with clinician's pubkey.
+ *   - No patient labels sent to the relay — topic IDs are random UUIDs only.
+ *   - Plaintext fallback removed: encryptForPatient returns null when pubkey
+ *     absent; callers queue in patient.outbound_queue until next sync.
+ *
+ *  ACCESS CONTROL
+ *   - Passphrase gate on every app open; 5-min idle lock; lock on visibilitychange.
+ *   - Passphrase minimum: 12 chars + strength score ≥ 3 (inline scorer).
+ *   - CSP: default-src 'self'; connect-src 'self' https:  (no unsafe-inline).
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import _sodiumLib from "libsodium-wrappers";
 
-// ─── Load libsodium from CDN ─────────────────────────────────────────────────
+// ─── libsodium initialisation ─────────────────────────────────────────────────
+// Imported as a proper ES module (bundled by Vite) — no dynamic script injection,
+// no window.sodium global, no StrictMode double-injection race.
 let _sodium = null;
+
 async function getSodium() {
   if (_sodium) return _sodium;
-  await new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://unpkg.com/libsodium-wrappers@0.7.13/dist/modules/libsodium-wrappers.js";
-    s.onload = resolve;
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-  await window.sodium.ready;
-  _sodium = window.sodium;
+  await _sodiumLib.ready;
+  _sodium = _sodiumLib;
   return _sodium;
+}
+
+// ─── Passphrase strength (inline — no external dependency) ───────────────────
+function passphraseStrength(p) {
+  if (!p || p.length < 12) return 0;
+  let score = 1; // at least 12 chars
+  if (p.length >= 16) score++;
+  if (/[A-Z]/.test(p)) score++;
+  if (/[0-9]/.test(p)) score++;
+  if (/[^A-Za-z0-9]/.test(p)) score++;
+  // penalise trivially repeated or sequential patterns
+  if (/(.)\1{3,}/.test(p) || /(?:abcd|1234|qwerty|password|passphrase)/i.test(p)) score = Math.max(1, score - 2);
+  return Math.min(score, 4); // 0–4
+}
+const STRENGTH_LABEL = ["", "Weak", "Fair", "Good", "Strong"];
+// Hex values match T.coral / T.amber / T.teal — defined here because T is declared later
+const STRENGTH_COLOR = ["", "#993C1D", "#BA7517", "#1D9E75", "#1D9E75"];
+
+// ─── Passphrase-derived key wrapping (Web Crypto) ────────────────────────────
+const enc = new TextEncoder();
+
+async function deriveKek(passphrase, salt) {
+  const base = await crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 600_000, hash: "SHA-256" },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function wrapSecretKey(secretKeyBytes, passphrase) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const kek  = await deriveKek(passphrase, salt);
+  const wrapped = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, kek, secretKeyBytes);
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return { wrappedSecretKey: b64(wrapped), salt: b64(salt), iv: b64(iv) };
+}
+
+async function unwrapSecretKey(wrappedB64, saltB64, ivB64, passphrase) {
+  const from = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const kek  = await deriveKek(passphrase, from(saltB64));
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: from(ivB64) },
+    kek,
+    from(wrappedB64)
+  );
+  return new Uint8Array(plain); // raw secretKey bytes
 }
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -70,27 +137,146 @@ const SKILLS = ["Naming","Memory","Speaking","Reading","Spelling","Math","Reason
 
 // ─── Default state ────────────────────────────────────────────────────────────
 const DEFAULT_STATE = {
-  keypair: null,          // { publicKey: base64, secretKey: base64 }
+  keypair: null,          // { publicKey: base64, wrappedSecretKey: base64, salt: base64, iv: base64 }
   relay_base_url: "",
-  patients: [],           // see addPatient() for shape
-  settings: { notifications: true },
+  patients: [],           // see makePatientShape() for shape
+  settings: { notifications: true, retention_months: 24 },
 };
+
+const RETENTION_MS = months => months * 30 * 86_400_000;
+
+function prunePatients(patients, retentionMonths) {
+  const cutoff = Date.now() - RETENTION_MS(retentionMonths);
+  return patients.map(p => ({
+    ...p,
+    sessions:    p.sessions.filter(s => new Date(s.completed_at).getTime() > cutoff),
+    messages:    p.messages.filter(m => new Date(m.sent_at).getTime() > cutoff),
+    assignments: p.assignments.filter(a => new Date(a.sent_at).getTime() > cutoff),
+  }));
+}
+
+// ─── Data-at-rest encryption ──────────────────────────────────────────────────
+// DEK lives only in memory after unlock, same lifecycle as secretKeyBytes.
+let _dataKey = null;
+
+// Derives a data-encryption key from the passphrase using an independent salt
+// (different from the KEK salt used to wrap the NaCl secret key).
+async function deriveDataKey(passphrase, dataSalt) {
+  return deriveKek(passphrase, dataSalt);
+}
+
+async function encryptBlob(obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, _dataKey, enc.encode(JSON.stringify(obj)));
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return JSON.stringify({ enc: true, ct: b64(ct), iv: b64(iv) });
+}
+
+// Set to true after the first successful encrypted write. Once set, decryptBlob rejects
+// any plaintext blob — the migration window is permanently closed.
+let _migrationComplete = false;
+
+async function decryptBlob(raw) {
+  const parsed = JSON.parse(raw);
+  const from   = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  if (!parsed.enc) {
+    if (_migrationComplete) throw new Error("expected encrypted blob — rejecting plaintext after migration");
+    return parsed; // accept plaintext only during the one-time migration window
+  }
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: from(parsed.iv) }, _dataKey, from(parsed.ct));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
 async function storageGet(key) {
   try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : null; }
   catch { return null; }
 }
+
 async function storageSet(key, val) {
-  try { await window.storage.set(key, JSON.stringify(val)); } catch {}
+  try {
+    if (key !== "familiar_clinician" || !_dataKey) {
+      await window.storage.set(key, JSON.stringify(val));
+      return;
+    }
+    // Split: keypair + relay URL stay plaintext (needed pre-unlock);
+    //        patients + settings are encrypted with the DEK.
+    const { keypair, relay_base_url, ...dataFields } = val;
+    await window.storage.set("familiar_meta", JSON.stringify({ keypair, relay_base_url, migration_complete: true }));
+    await window.storage.set("familiar_data", await encryptBlob(dataFields));
+    // Mark migration complete in-memory and in storage so the flag survives app restarts.
+    _migrationComplete = true;
+  } catch {}
 }
+
+// ─── Audit trail ─────────────────────────────────────────────────────────────
+const AUDIT_KEY = "familiar_audit";
+const AUDIT_CAP = 500;
+
+// Appends { ts, patient_id, action } encrypted with the DEK when available.
+// Falls back to plaintext only before first unlock (DEK not yet in memory).
+async function audit(action, patientId = null) {
+  try {
+    const existing = await loadAuditLog();
+    const updated  = [...existing, { ts: Date.now(), patient_id: patientId, action }].slice(-AUDIT_CAP);
+    if (_dataKey) {
+      await window.storage.set(AUDIT_KEY, await encryptBlob(updated));
+    } else {
+      await window.storage.set(AUDIT_KEY, JSON.stringify(updated));
+    }
+  } catch {}
+}
+
+async function loadAuditLog() {
+  try {
+    const raw = await window.storage.get(AUDIT_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw.value);
+    // Encrypted format: { enc: true, ct, iv }
+    if (parsed?.enc && _dataKey) return await decryptBlob(raw.value);
+    // Plaintext format (pre-migration entries): return as-is
+    if (Array.isArray(parsed)) return parsed;
+    return [];
+  } catch { return []; }
+}
+// Phase 1 load (pre-unlock): reads only keypair + relay URL, no patient data.
 async function loadState() {
+  // New split format: familiar_meta holds keypair + relay_base_url (plaintext).
+  try {
+    const raw = await window.storage.get("familiar_meta");
+    if (raw) {
+      const meta = JSON.parse(raw.value);
+      if (meta.migration_complete) _migrationComplete = true;
+      return { ...DEFAULT_STATE, keypair: meta.keypair || null, relay_base_url: meta.relay_base_url || "" };
+    }
+  } catch {}
+  // Legacy single-blob fallback.
   const s = await storageGet("familiar_clinician");
   if (!s) return DEFAULT_STATE;
-  return { ...DEFAULT_STATE, ...s,
-    settings: { ...DEFAULT_STATE.settings, ...s.settings },
-    patients: (s.patients || []).map(p => ({ ...makePatientShape(), ...p })),
-  };
+  // Return only non-PHI fields for the pre-unlock shell; patient data merged after unlock.
+  return { ...DEFAULT_STATE, keypair: s.keypair || null, relay_base_url: s.relay_base_url || "", settings: { ...DEFAULT_STATE.settings, ...s.settings } };
+}
+
+// Phase 2 load (post-unlock): decrypts and returns patients + settings.
+// Always falls through to legacy plaintext path when no encrypted data exists,
+// so existing users who haven't yet migrated to encrypted storage are not affected.
+async function loadPatientData() {
+  if (_dataKey) {
+    try {
+      const raw = await window.storage.get("familiar_data");
+      if (raw) {
+        const data = await decryptBlob(raw.value);
+        const settings = { ...DEFAULT_STATE.settings, ...data.settings };
+        return { settings, patients: prunePatients((data.patients || []).map(p => ({ ...makePatientShape(), ...p })), settings.retention_months) };
+      }
+    } catch {}
+  }
+  // No encrypted data yet (new encrypted format not written, or no DEK for legacy user):
+  // load from legacy plaintext blob.
+  const legacy = await storageGet("familiar_clinician");
+  if (!legacy) return { settings: DEFAULT_STATE.settings, patients: [] };
+  const settings = { ...DEFAULT_STATE.settings, ...legacy.settings };
+  return { settings, patients: prunePatients((legacy.patients || []).map(p => ({ ...makePatientShape(), ...p })), settings.retention_months) };
 }
 
 function makePatientShape(overrides = {}) {
@@ -107,6 +293,7 @@ function makePatientShape(overrides = {}) {
     sessions:              [],          // decrypted result session objects
     messages:              [],          // { direction, text, sent_at, packet_id }
     assignments:           [],          // { exercise_slug, prescribed_difficulty, note, sent_at }
+    outbound_queue:        [],          // { type, data, queued_at } — drained once patient_pubkey arrives
     notes:                 "",
     condition_type:        "acute_aphasia",
     bkt_snapshots:         {},
@@ -154,61 +341,42 @@ function clinAllTrajectories(skillSnapshots, conditionType = CLIN_DEFAULT_CONDIT
 }
 
 // ─── Crypto ──────────────────────────────────────────────────────────────────
-async function generateKeypair() {
-  const sodium = await getSodium();
-  const kp = sodium.crypto_box_keypair();
-  return {
-    publicKey: sodium.to_base64(kp.publicKey),
-    secretKey: sodium.to_base64(kp.privateKey),
-  };
-}
-
 /**
  * Decrypt a result packet published by the patient app.
- * The patient app's current stub uses btoa(JSON.stringify(data)) — we handle
- * both the stub format and real libsodium box ciphertext so the app works
- * before and after the patient-side encryption is upgraded.
+ * Accepts only real libsodium box ciphertext — plaintext fallback removed
+ * to preserve the zero-knowledge relay guarantee.
  */
-async function decryptPacket(payload, secretKeyB64, senderPubkeyB64) {
-  // Try stub format first (base64-encoded JSON, no encryption)
-  try {
-    const raw = atob(payload);
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj === "object") return { ok: true, data: obj, encrypted: false };
-  } catch {}
-
-  // Try real libsodium box decryption
+async function decryptPacket(payload, secretKeyBytes, senderPubkeyB64) {
   try {
     const sodium = await getSodium();
     const ciphertext = sodium.from_base64(payload);
-    // NaCl box: nonce is prepended (24 bytes), rest is ciphertext
     const NONCE_BYTES = sodium.crypto_box_NONCEBYTES; // 24
     if (ciphertext.length <= NONCE_BYTES) throw new Error("too short");
     const nonce = ciphertext.slice(0, NONCE_BYTES);
     const ct    = ciphertext.slice(NONCE_BYTES);
-    const sk    = sodium.from_base64(secretKeyB64);
+    const sk    = typeof secretKeyBytes === "string" ? sodium.from_base64(secretKeyBytes) : secretKeyBytes;
     const pk    = sodium.from_base64(senderPubkeyB64);
     const plain = sodium.crypto_box_open_easy(ct, nonce, pk, sk);
     const data  = JSON.parse(sodium.to_string(plain));
-    return { ok: true, data, encrypted: true };
-  } catch {}
-
-  return { ok: false, data: null, encrypted: true };
+    return { ok: true, data };
+  } catch {
+    return { ok: false, data: null };
+  }
 }
 
 /**
- * Encrypt a message/assignment for the patient.
- * Uses patient's public key so only they can decrypt it.
- * Falls back to stub format if patient hasn't registered yet.
+ * Encrypt a message/assignment for the patient using their public key.
+ * Returns null if the patient hasn't registered yet (no public key).
+ * Callers must queue the packet locally and retry after the next sync.
  */
-async function encryptForPatient(data, patientPubkeyB64, clinicianSecretKeyB64) {
-  if (!patientPubkeyB64 || !clinicianSecretKeyB64) {
-    return btoa(JSON.stringify(data));
-  }
+async function encryptForPatient(data, patientPubkeyB64, clinicianSecretKeyBytes) {
+  if (!patientPubkeyB64 || !clinicianSecretKeyBytes) return null;
   try {
     const sodium = await getSodium();
     const pk     = sodium.from_base64(patientPubkeyB64);
-    const sk     = sodium.from_base64(clinicianSecretKeyB64);
+    const sk     = typeof clinicianSecretKeyBytes === "string"
+                     ? sodium.from_base64(clinicianSecretKeyBytes)
+                     : clinicianSecretKeyBytes;
     const nonce  = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
     const plain  = sodium.from_string(JSON.stringify(data));
     const ct     = sodium.crypto_box_easy(plain, nonce, pk, sk);
@@ -216,16 +384,16 @@ async function encryptForPatient(data, patientPubkeyB64, clinicianSecretKeyB64) 
     full.set(nonce); full.set(ct, nonce.length);
     return sodium.to_base64(full);
   } catch {
-    return btoa(JSON.stringify(data));
+    return null;
   }
 }
 
 // ─── Relay API calls (clinician-side) ────────────────────────────────────────
-async function relayCreateTopic(baseUrl, clinicianPubkey, label) {
+async function relayCreateTopic(baseUrl, clinicianPubkey) {
   const res = await fetch(`${baseUrl}/topics`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label, clinician_pubkey: clinicianPubkey }),
+    body: JSON.stringify({ clinician_pubkey: clinicianPubkey }),
   });
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return res.json();
@@ -274,19 +442,21 @@ async function relayDeleteTopic(baseUrl, topicId, pollToken) {
 
 // ─── Sync logic ───────────────────────────────────────────────────────────────
 /**
- * Poll the relay for a single patient, decrypt all new packets, and return
+ * Poll the relay for a single patient, decrypt all new packets, drain any
+ * queued outbound packets once the patient's public key is known, and return
  * the updated patient object. Pure — does not mutate state.
+ *
+ * secretKeyBytes is the in-memory Uint8Array unlocked by the clinician's
+ * passphrase — it is never read from persistent storage here.
  */
-async function syncPatient(patient, keypair, baseUrl) {
+async function syncPatient(patient, secretKeyBytes, baseUrl) {
   if (!patient.topic_id || !patient.poll_token) return { patient, newCount: 0 };
 
-  // Get topic status to check if patient has registered
   let topicStatus = null;
   try {
     topicStatus = await relayGetTopic(baseUrl, patient.topic_id, patient.poll_token);
   } catch {}
 
-  // Poll for new packets
   let packets = [];
   try {
     const result = await relayPollPackets(baseUrl, patient.topic_id, patient.poll_token, patient.out_sequence);
@@ -295,26 +465,23 @@ async function syncPatient(patient, keypair, baseUrl) {
 
   if (packets.length === 0 && !topicStatus) return { patient, newCount: 0 };
 
-  // Decrypt each packet
+  const resolvedPubkey = topicStatus?.patient_pubkey ?? patient.patient_pubkey;
+
+  // Decrypt inbound packets
   const newSessions  = [...patient.sessions];
   const updatedSnaps = { ...(patient.bkt_snapshots || {}) };
   let newOutSequence = patient.out_sequence;
   let newCount = 0;
 
   for (const pkt of packets) {
-    const { ok, data } = await decryptPacket(
-      pkt.payload,
-      keypair.secretKey,
-      patient.patient_pubkey || ""
-    );
+    if (!resolvedPubkey) continue; // no pubkey yet → cannot decrypt; skip
+    const { ok, data } = await decryptPacket(pkt.payload, secretKeyBytes, resolvedPubkey);
     if (ok && data?.attempts) {
-      // Avoid duplicates by session_id
       if (!newSessions.some(s => s.session_id === data.session_id)) {
         newSessions.push({ ...data, packet_id: pkt.id, received_at: pkt.created_at });
         newCount++;
       }
     }
-    // Absorb BKT snapshots included in the packet (patient app v2+)
     if (ok && data?.bkt_snapshots) {
       for (const [skill, snaps] of Object.entries(data.bkt_snapshots)) {
         const arr = Array.isArray(snaps) ? snaps : [snaps];
@@ -331,14 +498,34 @@ async function syncPatient(patient, keypair, baseUrl) {
     }
   }
 
+  // Drain outbound queue now that we have the patient's public key
+  let remainingQueue = [...(patient.outbound_queue || [])];
+  if (resolvedPubkey && remainingQueue.length > 0) {
+    const stillPending = [];
+    for (const item of remainingQueue) {
+      const payload = await encryptForPatient(item.data, resolvedPubkey, secretKeyBytes);
+      if (payload) {
+        try {
+          await relaySendInbound(baseUrl, patient.topic_id, patient.inbound_publish_token, payload);
+        } catch {
+          stillPending.push(item); // retry next sync
+        }
+      } else {
+        stillPending.push(item);
+      }
+    }
+    remainingQueue = stillPending;
+  }
+
   return {
     patient: {
       ...patient,
       registered:     topicStatus?.patient_registered ?? patient.registered,
-      patient_pubkey: topicStatus?.patient_pubkey ?? patient.patient_pubkey,
+      patient_pubkey: resolvedPubkey,
       out_sequence:   newOutSequence,
       sessions:       newSessions,
       bkt_snapshots:  updatedSnaps,
+      outbound_queue: remainingQueue,
       last_sync:      Date.now(),
     },
     newCount,
@@ -393,15 +580,15 @@ const btn = (bg, col, border) => ({
   borderRadius: T.radiusMd, fontSize: 13, fontWeight: 500, cursor: "pointer",
 });
 
-function Input({ value, onChange, placeholder, style, type = "text", multiline }) {
+function Input({ value, onChange, placeholder, style, type = "text", multiline, disabled, onKeyDown }) {
   const s = {
     width: "100%", padding: "9px 12px", fontSize: 13, borderRadius: T.radiusMd,
     border: `0.5px solid ${T.borderSec}`, background: T.bg, color: T.text,
-    boxSizing: "border-box", fontFamily: "var(--font-sans)", ...style,
+    boxSizing: "border-box", fontFamily: "var(--font-sans)", opacity: disabled ? 0.5 : 1, ...style,
   };
   return multiline
-    ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ ...s, resize: "vertical" }} />
-    : <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={s} />;
+    ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ ...s, resize: "vertical" }} disabled={disabled} />
+    : <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={s} disabled={disabled} onKeyDown={onKeyDown} />;
 }
 
 function Avatar({ name, size = 36, bg = T.tealLt, color = T.tealDk }) {
@@ -490,6 +677,8 @@ function SessionSparkline({ sessions, width = 160, height = 36 }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [state, _setState] = useState(null);
+  // secretKeyBytes lives only in React state — never persisted to storage
+  const [secretKeyBytes, setSecretKeyBytes] = useState(null);
   const [screen, setScreen]         = useState("roster");
   const [activePatientId, setActivePatientId] = useState(null);
   const [loading, setLoading]       = useState(true);
@@ -513,48 +702,80 @@ export default function App() {
   }, []);
 
   const activePatient = state?.patients?.find(p => p.id === activePatientId) || null;
-  const needsSetup = state && (!state.keypair || !state.relay_base_url);
+  const needsSetup    = state && (!state.keypair?.wrappedSecretKey || !state.relay_base_url);
+  // Show passphrase unlock if keypair exists but secret key isn't in memory yet
+  const needsUnlock   = state && state.keypair && !needsSetup && !secretKeyBytes;
 
-  // Auto-sync every 3 minutes when relay is configured
+  // Merge patient data into state after unlock (called by both unlock screens).
+  const handleUnlock = useCallback((sk, data = null) => {
+    setSecretKeyBytes(sk);
+    if (data?.patients) {
+      _setState(prev => ({ ...prev, patients: data.patients, settings: { ...DEFAULT_STATE.settings, ...data.settings } }));
+    }
+  }, []);
+
+  // Lock after 5 minutes of inactivity or when the app is hidden.
+  // Clears both secretKeyBytes and the module-level DEK.
   useEffect(() => {
-    if (!state?.keypair || !state?.relay_base_url || needsSetup) return;
+    if (!secretKeyBytes) return;
+    const lock = () => { _dataKey = null; setSecretKeyBytes(null); };
+    let timer;
+    const reset = () => { clearTimeout(timer); timer = setTimeout(lock, 5 * 60_000); };
+    const onHide = () => { if (document.hidden) lock(); };
+    document.addEventListener("visibilitychange", onHide);
+    document.addEventListener("pointerdown", reset);
+    document.addEventListener("keydown", reset);
+    reset();
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onHide);
+      document.removeEventListener("pointerdown", reset);
+      document.removeEventListener("keydown", reset);
+    };
+  }, [secretKeyBytes]);
+
+  // Auto-sync every 3 minutes when relay is configured and unlocked
+  useEffect(() => {
+    if (!secretKeyBytes || !state?.relay_base_url || needsSetup) return;
     const doSync = async () => syncAll(false);
     const t = setInterval(doSync, 3 * 60_000);
     return () => clearInterval(t);
-  }, [state?.keypair, state?.relay_base_url, needsSetup]);
+  }, [secretKeyBytes, state?.relay_base_url, needsSetup]);
 
   async function syncAll(showError = true) {
-    if (!state?.keypair || !state?.relay_base_url) return;
+    if (!secretKeyBytes || !state?.relay_base_url) return;
     setSyncing(true); setSyncError(null);
+    audit("sync_all");
     let total = 0;
     try {
       const updated = await Promise.all(
-        state.patients.map(p => syncPatient(p, state.keypair, state.relay_base_url))
+        state.patients.map(p => syncPatient(p, secretKeyBytes, state.relay_base_url))
       );
       total = updated.reduce((a, u) => a + u.newCount, 0);
       setState(s => ({ ...s, patients: updated.map(u => u.patient) }));
       if (total > 0) setNewPacketCount(c => c + total);
-    } catch (e) {
-      if (showError) setSyncError(e.message);
+    } catch {
+      if (showError) setSyncError("Sync failed — check your relay connection.");
     }
     setSyncing(false);
   }
 
   async function syncOne(patientId) {
-    if (!state?.keypair || !state?.relay_base_url) return;
+    if (!secretKeyBytes || !state?.relay_base_url) return;
     setSyncing(true); setSyncError(null);
+    audit("sync_one", patientId);
     try {
       const patient = state.patients.find(p => p.id === patientId);
       if (!patient) return;
-      const { patient: updated, newCount } = await syncPatient(patient, state.keypair, state.relay_base_url);
+      const { patient: updated, newCount } = await syncPatient(patient, secretKeyBytes, state.relay_base_url);
       setState(s => ({ ...s, patients: s.patients.map(p => p.id === patientId ? updated : p) }));
       if (newCount > 0) setNewPacketCount(c => c + newCount);
-    } catch (e) { setSyncError(e.message); }
+    } catch { setSyncError("Sync failed — check your relay connection."); }
     setSyncing(false);
   }
 
   async function createPatientTopic(label) {
-    const topic = await relayCreateTopic(state.relay_base_url, state.keypair.publicKey, label);
+    const topic = await relayCreateTopic(state.relay_base_url, state.keypair.publicKey);
     const patient = makePatientShape({
       label,
       topic_id:              topic.topic_id,
@@ -567,11 +788,21 @@ export default function App() {
   }
 
   async function sendAssignment(patient, assignment) {
-    const payload = await encryptForPatient(
-      { type: "assignment", ...assignment, sent_at: new Date().toISOString() },
-      patient.patient_pubkey,
-      state.keypair.secretKey
-    );
+    audit("assignment_send", patient.id);
+    const data = { type: "assignment", ...assignment, sent_at: new Date().toISOString() };
+    const payload = await encryptForPatient(data, patient.patient_pubkey, secretKeyBytes);
+    if (!payload) {
+      // Patient not yet registered — queue locally
+      setState(s => ({
+        ...s,
+        patients: s.patients.map(p => p.id !== patient.id ? p : {
+          ...p,
+          outbound_queue: [...(p.outbound_queue || []), { type: "assignment", data, queued_at: new Date().toISOString() }],
+          assignments:    [...p.assignments, { ...assignment, sent_at: new Date().toISOString() }],
+        }),
+      }));
+      return;
+    }
     await relaySendInbound(state.relay_base_url, patient.topic_id, patient.inbound_publish_token, payload);
     setState(s => ({
       ...s,
@@ -583,11 +814,21 @@ export default function App() {
   }
 
   async function sendMessage(patient, text) {
-    const payload = await encryptForPatient(
-      { type: "message", text, sent_at: new Date().toISOString() },
-      patient.patient_pubkey,
-      state.keypair.secretKey
-    );
+    audit("message_send", patient.id);
+    const data = { type: "message", text, sent_at: new Date().toISOString() };
+    const payload = await encryptForPatient(data, patient.patient_pubkey, secretKeyBytes);
+    if (!payload) {
+      // Patient not yet registered — queue locally
+      setState(s => ({
+        ...s,
+        patients: s.patients.map(p => p.id !== patient.id ? p : {
+          ...p,
+          outbound_queue: [...(p.outbound_queue || []), { type: "message", data, queued_at: new Date().toISOString() }],
+          messages:       [...p.messages, { direction: "out", text, sent_at: new Date().toISOString() }],
+        }),
+      }));
+      return;
+    }
     await relaySendInbound(state.relay_base_url, patient.topic_id, patient.inbound_publish_token, payload);
     setState(s => ({
       ...s,
@@ -617,12 +858,15 @@ export default function App() {
     setScreen(s);
     if (patientId !== undefined) setActivePatientId(patientId);
     setSyncError(null);
+    if (s === "patient" && patientId) audit("patient_open", patientId);
   };
 
   return (
     <div style={{ fontFamily: "var(--font-sans)", color: T.text, background: T.bgTer, minHeight: "100vh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
       {needsSetup
-        ? <SetupScreen state={state} setState={setState} sodiumReady={sodiumReady} />
+        ? <SetupScreen state={state} setState={setState} sodiumReady={sodiumReady} onUnlock={handleUnlock} />
+        : needsUnlock
+        ? <PassphraseUnlockScreen keypair={state.keypair} onUnlock={handleUnlock} />
         : <>
             <Header state={state} screen={screen} syncing={syncing} syncError={syncError}
               onSync={() => activePatient ? syncOne(activePatient.id) : syncAll()} navTo={navTo} newPacketCount={newPacketCount} />
@@ -638,6 +882,7 @@ export default function App() {
                   onRemove={() => { removePatient(activePatient.id); navTo("roster"); }}
                   onUpdateNotes={notes => setState(s => ({ ...s, patients: s.patients.map(p => p.id === activePatient.id ? { ...p, notes } : p) }))}
                   onUpdateCondition={ct => setState(s => ({ ...s, patients: s.patients.map(p => p.id === activePatient.id ? { ...p, condition_type: ct } : p) }))}
+                  onUpdatePatient={patch => setState(s => ({ ...s, patients: s.patients.map(p => p.id === activePatient.id ? { ...p, ...patch } : p) }))}
                   navTo={navTo}
                 />
               )}
@@ -652,27 +897,105 @@ export default function App() {
   );
 }
 
+// ─── Passphrase unlock screen (shown on every app open after initial setup) ────
+function PassphraseUnlockScreen({ keypair, onUnlock }) {
+  const [passphrase, setPassphrase] = useState("");
+  const [error, setError]           = useState(null);
+  const [unlocking, setUnlocking]   = useState(false);
+
+  async function unlock() {
+    if (!passphrase) return;
+    setUnlocking(true); setError(null);
+    try {
+      const sk = await unwrapSecretKey(keypair.wrappedSecretKey, keypair.salt, keypair.iv, passphrase);
+      // Derive DEK from the same passphrase (independent salt stored in keypair).
+      if (keypair.dataSalt) {
+        const from = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        _dataKey = await deriveDataKey(passphrase, from(keypair.dataSalt));
+      }
+      const data = await loadPatientData();
+      // One-time migration: zero the legacy plaintext key now that encrypted data is loaded.
+      // This runs only when familiar_clinician still has plaintext (pre-migration users).
+      try {
+        const legacy = await window.storage.get("familiar_clinician");
+        if (legacy && JSON.parse(legacy.value) !== null) {
+          await window.storage.set("familiar_clinician", JSON.stringify(null));
+        }
+      } catch {}
+      onUnlock(sk, data);
+    } catch {
+      _dataKey = null;
+      setError("Incorrect passphrase. Please try again.");
+    }
+    setUnlocking(false);
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "2rem" }}>
+      <div style={{ ...card, maxWidth: 400, width: "100%" }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", background: T.purpleLt, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.purple} strokeWidth="1.8"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <p style={{ fontSize: 17, fontWeight: 500, marginBottom: 4 }}>Unlock Familiar</p>
+        <p style={{ fontSize: 13, color: T.textSec, marginBottom: 16 }}>Enter your passphrase to decrypt your private key and access patient records.</p>
+        <Input type="password" value={passphrase} onChange={setPassphrase} placeholder="Passphrase" style={{ marginBottom: 10 }}
+          onKeyDown={e => e.key === "Enter" && unlock()} />
+        {error && <p style={{ fontSize: 12, color: T.coral, marginBottom: 10 }}>{error}</p>}
+        <button onClick={unlock} disabled={unlocking || !passphrase} style={{ ...btn(T.purple, "white"), width: "100%", opacity: unlocking || !passphrase ? 0.6 : 1 }}>
+          {unlocking ? "Unlocking…" : "Unlock"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Setup screen ──────────────────────────────────────────────────────────────
-function SetupScreen({ state, setState, sodiumReady }) {
-  const [step, setStep]     = useState(state.keypair ? 1 : 0);
-  const [relayUrl, setRelayUrl] = useState(state.relay_base_url || "");
+function SetupScreen({ state, setState, sodiumReady, onUnlock }) {
+  const [step, setStep]           = useState(state.keypair ? 2 : 0);
+  const [relayUrl, setRelayUrl]   = useState(state.relay_base_url || "");
+  const [passphrase, setPassphrase] = useState("");
+  const [passphrase2, setPassphrase2] = useState("");
   const [generating, setGenerating] = useState(false);
-  const [generated, setGenerated]   = useState(!!state.keypair);
+  const [generated, setGenerated] = useState(!!state.keypair);
+  // Hold raw secretKey bytes in memory during setup so we can call onUnlock at finish
+  const rawSecretKeyRef = useRef(null);
 
   async function generate() {
     setGenerating(true);
     try {
-      const kp = await generateKeypair();
-      await setState(s => ({ ...s, keypair: kp }));
+      const sodium = await getSodium();
+      const kp     = sodium.crypto_box_keypair();
+      rawSecretKeyRef.current = kp.privateKey; // raw Uint8Array — never persisted
+      // Store only the public key for now; wrap after passphrase is set
+      await setState(s => ({ ...s, keypair: { publicKey: sodium.to_base64(kp.publicKey) } }));
       setGenerated(true);
       setStep(1);
     } finally { setGenerating(false); }
   }
 
-  function finish() {
-    if (!relayUrl.trim()) return;
-    setState(s => ({ ...s, relay_base_url: relayUrl.trim().replace(/\/$/, "") }));
+  async function setPassphraseAndAdvance() {
+    if (!passphrase || passphrase !== passphrase2) return;
+    if (passphraseStrength(passphrase) < 3) return; // enforced by UI — guard here too
+    const dataSalt = crypto.getRandomValues(new Uint8Array(16));
+    const b64      = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const wrapped  = await wrapSecretKey(rawSecretKeyRef.current, passphrase);
+    const publicKey = state.keypair.publicKey;
+    // Store dataSalt alongside keypair (not sensitive — used only for DEK derivation).
+    await setState(s => ({ ...s, keypair: { publicKey, ...wrapped, dataSalt: b64(dataSalt) } }));
+    // Derive and cache the DEK so it's ready when finish() calls onUnlock.
+    _dataKey = await deriveDataKey(passphrase, dataSalt);
+    setStep(2);
   }
+
+  async function finish() {
+    if (!relayUrl.trim()) return;
+    await setState(s => ({ ...s, relay_base_url: relayUrl.trim().replace(/\/$/, "") }));
+    onUnlock(rawSecretKeyRef.current, null); // new user — no patient data yet
+  }
+
+  const passphraseMatch = passphrase && passphrase === passphrase2;
+  const strength        = passphraseStrength(passphrase);
+  const passphraseOk    = passphrase.length >= 12 && strength >= 3;
 
   return (
     <div style={{ padding: "3rem 2rem", maxWidth: 480, margin: "0 auto" }}>
@@ -680,7 +1003,7 @@ function SetupScreen({ state, setState, sodiumReady }) {
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
       </div>
       <p style={{ fontSize: 22, fontWeight: 500, marginBottom: 6 }}>Familiar — Clinician</p>
-      <p style={{ fontSize: 14, color: T.textSec, marginBottom: 32 }}>Set up once. Your encryption key never leaves this device.</p>
+      <p style={{ fontSize: 14, color: T.textSec, marginBottom: 32 }}>Set up once. Your encryption key is protected by a passphrase you choose.</p>
 
       {/* Step 0: generate keypair */}
       <div style={{ ...card, marginBottom: 12, border: step === 0 ? `2px solid ${T.purple}` : `0.5px solid ${T.border}` }}>
@@ -691,7 +1014,7 @@ function SetupScreen({ state, setState, sodiumReady }) {
           <span style={{ fontSize: 14, fontWeight: 500 }}>Generate your encryption keypair</span>
         </div>
         <p style={{ fontSize: 12, color: T.textSec, marginBottom: generated ? 0 : 12 }}>
-          Creates a public key (shared with patients via the relay) and a private key (stored only on this device). Patient result packets are encrypted so only you can read them.
+          Creates a public/private keypair. Patient result packets are encrypted so only you can read them.
         </p>
         {!generated && (
           <button onClick={generate} disabled={!sodiumReady || generating} style={{ ...btn(T.purple, "white"), opacity: !sodiumReady || generating ? 0.6 : 1 }}>
@@ -700,17 +1023,49 @@ function SetupScreen({ state, setState, sodiumReady }) {
         )}
       </div>
 
-      {/* Step 1: relay URL */}
-      <div style={{ ...card, border: step === 1 ? `2px solid ${T.purple}` : `0.5px solid ${T.border}` }}>
+      {/* Step 1: choose passphrase */}
+      <div style={{ ...card, marginBottom: 12, border: step === 1 ? `2px solid ${T.purple}` : `0.5px solid ${T.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <div style={{ width: 24, height: 24, borderRadius: "50%", background: step >= 1 ? T.purpleLt : T.bgSec, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 500, color: step >= 1 ? T.purple : T.textTer }}>2</div>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>Choose a passphrase</span>
+        </div>
+        <p style={{ fontSize: 12, color: T.textSec, marginBottom: 10 }}>
+          Your private key will be encrypted with this passphrase. You will need it every time you open the app. Store it safely — it cannot be recovered.
+        </p>
+        <Input type="password" value={passphrase} onChange={setPassphrase} placeholder="Passphrase" style={{ marginBottom: 8 }} disabled={step < 1} />
+        {passphrase.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", gap: 4, marginBottom: 3 }}>
+              {[1,2,3,4].map(i => (
+                <div key={i} style={{ flex: 1, height: 3, borderRadius: 99, background: strength >= i ? STRENGTH_COLOR[strength] : T.bgSec, transition: "background 0.2s" }} />
+              ))}
+            </div>
+            <p style={{ fontSize: 10, color: STRENGTH_COLOR[strength] || T.textTer }}>
+              {strength > 0 ? STRENGTH_LABEL[strength] : `At least 12 characters (${passphrase.length}/12)`}
+              {strength > 0 && strength < 3 && " — add length, numbers, or symbols"}
+            </p>
+          </div>
+        )}
+        <Input type="password" value={passphrase2} onChange={setPassphrase2} placeholder="Confirm passphrase" style={{ marginBottom: 10 }} disabled={step < 1} />
+        {passphrase && passphrase2 && !passphraseMatch && (
+          <p style={{ fontSize: 11, color: T.coral, marginBottom: 8 }}>Passphrases don't match.</p>
+        )}
+        <button onClick={setPassphraseAndAdvance} disabled={step < 1 || !passphraseMatch || !passphraseOk} style={{ ...btn(T.purple, "white"), opacity: step < 1 || !passphraseMatch || !passphraseOk ? 0.6 : 1 }}>
+          Set passphrase
+        </button>
+      </div>
+
+      {/* Step 2: relay URL */}
+      <div style={{ ...card, border: step === 2 ? `2px solid ${T.purple}` : `0.5px solid ${T.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <div style={{ width: 24, height: 24, borderRadius: "50%", background: step >= 2 ? T.purpleLt : T.bgSec, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 500, color: step >= 2 ? T.purple : T.textTer }}>3</div>
           <span style={{ fontSize: 14, fontWeight: 500 }}>Connect to the relay server</span>
         </div>
         <p style={{ fontSize: 12, color: T.textSec, marginBottom: 12 }}>
-          The relay is a small server you (or your organisation) runs. It routes encrypted packets between you and your patients without seeing any data.
+          The relay routes encrypted packets between you and your patients without seeing any data.
         </p>
-        <Input value={relayUrl} onChange={setRelayUrl} placeholder="https://your-relay.example.com" style={{ marginBottom: 10 }} disabled={step < 1} />
-        <button onClick={finish} disabled={step < 1 || !relayUrl.trim()} style={{ ...btn(T.purple, "white"), opacity: step < 1 || !relayUrl.trim() ? 0.6 : 1, width: "100%" }}>
+        <Input value={relayUrl} onChange={setRelayUrl} placeholder="https://your-relay.example.com" style={{ marginBottom: 10 }} disabled={step < 2} />
+        <button onClick={finish} disabled={step < 2 || !relayUrl.trim()} style={{ ...btn(T.purple, "white"), opacity: step < 2 || !relayUrl.trim() ? 0.6 : 1, width: "100%" }}>
           Start using Familiar
         </button>
       </div>
@@ -815,7 +1170,7 @@ function RosterScreen({ state, navTo }) {
 }
 
 // ─── Patient detail screen ────────────────────────────────────────────────────
-function PatientScreen({ patient, state, onSync, onSendAssignment, onSendMessage, onRemove, onUpdateNotes, onUpdateCondition, navTo }) {
+function PatientScreen({ patient, state, onSync, onSendAssignment, onSendMessage, onRemove, onUpdateNotes, onUpdateCondition, onUpdatePatient, navTo }) {
   const [tab, setTab]         = useState("progress");
   const conditionType   = patient.condition_type || CLIN_DEFAULT_CONDITION;
   const conditionLabel  = CLIN_CONDITION_PROFILES[conditionType]?.label || conditionType;
@@ -837,7 +1192,7 @@ function PatientScreen({ patient, state, onSync, onSendAssignment, onSendMessage
     try {
       await onSendMessage(msgText.trim());
       setMsgText("");
-    } catch (e) { setSendError(e.message); }
+    } catch { setSendError("Could not send — check your connection and try again."); }
     setSending(false);
   }
 
@@ -1074,6 +1429,8 @@ function PatientScreen({ patient, state, onSync, onSendAssignment, onSendMessage
                 : `Recovery model — half-life ${CLIN_CONDITION_PROFILES[conditionType]?.half_life_days} days, no regression`}
             </p>
           </div>
+          <TokenRotation patient={patient} state={state}
+            onNewToken={tok => onUpdatePatient({ inbound_publish_token: tok })} />
           <div style={{ ...card, border: `0.5px solid ${T.coral}` }}>
             <p style={{ fontSize: 13, fontWeight: 500, color: T.coral, marginBottom: 4 }}>Remove patient slot</p>
             <p style={{ fontSize: 12, color: T.textSec, marginBottom: 10 }}>Deletes the topic from the relay and removes all local data. This cannot be undone.</p>
@@ -1107,7 +1464,7 @@ function AssignTab({ patient, onSend }) {
       await onSend({ exercise_slug: selected, prescribed_difficulty: difficulty, note });
       setSent(true); setSelected(null); setNote("");
       setTimeout(() => setSent(false), 3000);
-    } catch (e) { setError(e.message); }
+    } catch { setError("Could not send — check your connection and try again."); }
     setSending(false);
   }
 
@@ -1170,7 +1527,7 @@ function NewPatientScreen({ state, onCreate, navTo }) {
     try {
       const patient = await onCreate(label.trim());
       setCreated(patient);
-    } catch (e) { setError(e.message); }
+    } catch { setError("Could not create patient slot — check your relay connection."); }
     setCreating(false);
   }
 
@@ -1221,17 +1578,45 @@ function SettingsScreen({ state, setState, sodiumReady }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 0, marginBottom: 14, border: `0.5px solid ${T.border}`, borderRadius: T.radiusMd, overflow: "hidden" }}>
-        {[["relay","Relay"],["keys","Keys"],["danger","Danger zone"]].map(([k,l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 4px", fontSize: 12, border: "none", borderRight: k !== "danger" ? `0.5px solid ${T.border}` : "none", background: tab === k ? T.purple : T.bg, color: tab === k ? "white" : T.textSec, cursor: "pointer", fontWeight: tab === k ? 500 : 400 }}>{l}</button>
+        {[["relay","Relay"],["keys","Keys"],["audit","Audit log"],["danger","Danger"]].map(([k,l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "9px 4px", fontSize: 11, border: "none", borderRight: k !== "danger" ? `0.5px solid ${T.border}` : "none", background: tab === k ? T.purple : T.bg, color: tab === k ? "white" : T.textSec, cursor: "pointer", fontWeight: tab === k ? 500 : 400 }}>{l}</button>
         ))}
       </div>
 
       {tab === "relay" && (
-        <div style={{ ...card }}>
-          <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Relay server</p>
-          <p style={{ fontSize: 12, color: T.textSec, marginBottom: 4 }}>Current URL</p>
-          <p style={{ fontSize: 12, fontFamily: "var(--font-mono)", marginBottom: 12, color: T.text }}>{state.relay_base_url}</p>
-          <ChangeRelayUrl state={state} setState={setState} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ ...card }}>
+            <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Relay server</p>
+            <p style={{ fontSize: 12, color: T.textSec, marginBottom: 4 }}>Current URL</p>
+            <p style={{ fontSize: 12, fontFamily: "var(--font-mono)", marginBottom: 12, color: T.text }}>{state.relay_base_url}</p>
+            <ChangeRelayUrl state={state} setState={setState} />
+          </div>
+          <div style={{ ...card, background: T.tealLt, border: `0.5px solid ${T.teal2}` }}>
+            <p style={{ fontSize: 13, fontWeight: 500, color: T.tealDk, marginBottom: 4 }}>Data at rest</p>
+            <p style={{ fontSize: 12, color: T.tealDk, marginBottom: 6 }}>
+              Patient records, session history, and clinical notes are encrypted on this device using
+              a key derived from your passphrase. The data is unreadable without it.
+            </p>
+            <p style={{ fontSize: 11, color: T.teal }}>
+              Full-disk encryption (FileVault / BitLocker) is still recommended as a defence-in-depth measure.
+            </p>
+          </div>
+          <div style={{ ...card }}>
+            <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Data retention</p>
+            <p style={{ fontSize: 12, color: T.textSec, marginBottom: 10 }}>
+              Session history, messages, and assignments older than this window are pruned on app load.
+              Reducing this also reduces local storage usage.
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[6, 12, 24, 36].map(m => (
+                <button key={m}
+                  onClick={() => setState(s => ({ ...s, settings: { ...s.settings, retention_months: m } }))}
+                  style={{ ...btn(state.settings.retention_months === m ? T.purple : T.bg, state.settings.retention_months === m ? "white" : T.textSec, `0.5px solid ${state.settings.retention_months === m ? T.purple : T.border}`), fontSize: 12 }}>
+                  {m} months
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1252,13 +1637,111 @@ function SettingsScreen({ state, setState, sodiumReady }) {
         </div>
       )}
 
+      {tab === "audit" && <AuditLogPanel />}
+
       {tab === "danger" && (
-        <div style={{ ...card, border: `0.5px solid ${T.coral}` }}>
-          <p style={{ fontSize: 13, fontWeight: 500, color: T.coral, marginBottom: 4 }}>Clear all clinician data</p>
-          <p style={{ fontSize: 12, color: T.textSec, marginBottom: 12 }}>Deletes your keypair, all patient records, and all session data from this device. Patient topics on the relay are NOT deleted automatically. This cannot be undone.</p>
-          <button onClick={() => { if (confirm("Delete all Familiar clinician data? This cannot be undone.")) { setState({ ...DEFAULT_STATE }); } }} style={{ ...btn(T.coral, "white"), fontSize: 13 }}>Clear all data</button>
-        </div>
+        <DangerZone setState={setState} />
       )}
+    </div>
+  );
+}
+
+function AuditLogPanel() {
+  const [entries, setEntries] = useState(null);
+  useEffect(() => { loadAuditLog().then(setEntries); }, []);
+
+  const ACTION_LABEL = {
+    patient_open:    "Opened patient record",
+    sync_all:        "Synced all patients",
+    sync_one:        "Synced patient",
+    assignment_send: "Sent assignment",
+    message_send:    "Sent message",
+  };
+
+  if (!entries) return <div style={{ ...card, color: T.textTer, fontSize: 13 }}>Loading…</div>;
+
+  return (
+    <div style={{ ...card }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <p style={{ fontSize: 13, fontWeight: 500 }}>Access log</p>
+        <span style={{ fontSize: 10, color: T.textTer }}>last {Math.min(entries.length, 50)} of {entries.length} entries</span>
+      </div>
+      <p style={{ fontSize: 11, color: T.textSec, marginBottom: 10 }}>
+        Timestamps, pseudonymous patient IDs, and action types only — no health data.
+      </p>
+      {entries.length === 0
+        ? <p style={{ fontSize: 13, color: T.textTer }}>No entries yet.</p>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {[...entries].reverse().slice(0, 50).map((e, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, fontSize: 11, padding: "4px 0", borderBottom: `0.5px solid ${T.border}` }}>
+                <span style={{ color: T.textTer, flexShrink: 0, fontFamily: "var(--font-mono)" }}>
+                  {new Date(e.ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <span style={{ color: T.text }}>{ACTION_LABEL[e.action] || e.action}</span>
+                {e.patient_id && <span style={{ color: T.textTer, fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.patient_id.slice(0, 18)}…</span>}
+              </div>
+            ))}
+          </div>
+      }
+    </div>
+  );
+}
+
+function TokenRotation({ patient, state, onNewToken }) {
+  const [rotating, setRotating] = useState(false);
+  const [result, setResult]     = useState(null); // "ok" | "error" | "unsupported"
+
+  async function rotate() {
+    setRotating(true); setResult(null);
+    try {
+      const res = await fetch(
+        `${state.relay_base_url}/topics/${patient.topic_id}/rotate-inbound-token`,
+        { method: "POST", headers: { Authorization: `Bearer ${patient.poll_token}` } }
+      );
+      if (res.ok) {
+        const body = await res.json().catch(() => null);
+        if (body?.inbound_publish_token) onNewToken(body.inbound_publish_token);
+        setResult("ok");
+      } else {
+        setResult("unsupported");
+      }
+    } catch { setResult("error"); }
+    setRotating(false);
+  }
+
+  return (
+    <div style={{ ...card, marginBottom: 10 }}>
+      <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Rotate inbound token</p>
+      <p style={{ fontSize: 12, color: T.textSec, marginBottom: 10 }}>
+        Invalidates the current write credential used to send assignments and messages to this patient.
+        Use this if you suspect the token has been compromised. Requires relay support.
+      </p>
+      {result === "ok"          && <p style={{ fontSize: 11, color: T.teal,    marginBottom: 8 }}>Token rotated successfully.</p>}
+      {result === "unsupported" && <p style={{ fontSize: 11, color: T.amber,   marginBottom: 8 }}>This relay does not support token rotation (POST /topics/:id/rotate-inbound-token).</p>}
+      {result === "error"       && <p style={{ fontSize: 11, color: T.coral,   marginBottom: 8 }}>Could not reach relay — check your connection.</p>}
+      <button onClick={rotate} disabled={rotating || !patient.topic_id} style={{ ...btn(T.purpleLt, T.purple, `0.5px solid ${T.purple2}`), fontSize: 12, opacity: rotating || !patient.topic_id ? 0.6 : 1 }}>
+        {rotating ? "Rotating…" : "Rotate token"}
+      </button>
+    </div>
+  );
+}
+
+function DangerZone({ setState }) {
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <div style={{ ...card, border: `0.5px solid ${T.coral}` }}>
+      <p style={{ fontSize: 13, fontWeight: 500, color: T.coral, marginBottom: 4 }}>Clear all clinician data</p>
+      <p style={{ fontSize: 12, color: T.textSec, marginBottom: 12 }}>
+        Deletes your keypair, all patient records, and all session data from this device.
+        Patient topics on the relay are NOT deleted automatically. This cannot be undone.
+      </p>
+      {!confirm
+        ? <button onClick={() => setConfirm(true)} style={{ ...btn("transparent", T.coral, `0.5px solid ${T.coral}`), fontSize: 13 }}>Clear all data</button>
+        : <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setConfirm(false)} style={{ ...btn("transparent", T.textSec, `0.5px solid ${T.border}`), fontSize: 13 }}>Cancel</button>
+            <button onClick={() => setState({ ...DEFAULT_STATE })} style={{ ...btn(T.coral, "white"), fontSize: 13 }}>Yes, delete everything</button>
+          </div>
+      }
     </div>
   );
 }

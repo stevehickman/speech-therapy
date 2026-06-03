@@ -13,5 +13,12 @@
       "runtimeArgs": ["/Users/stevehickman/Documents/GitHub/speech-therapy/pwa/node_modules/.bin/vite", "--config", "pwa/vite.config.js", "--port", "5176"],
       "port": 5176
     }
+    ,
+    {
+      "name": "Clinician App",
+      "runtimeExecutable": "/Users/stevehickman/.nvm/versions/node/v24.14.0/bin/node",
+      "runtimeArgs": ["/Users/stevehickman/Documents/GitHub/speech-therapy/clinician-app/node_modules/.bin/vite", "--config", "/Users/stevehickman/Documents/GitHub/speech-therapy/clinician-app/vite.config.js"],
+      "port": 5174
+    }
   ]
 }
