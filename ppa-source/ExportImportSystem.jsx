@@ -555,12 +555,17 @@ export function ppaDoRestore(file, onError) {
       const payload = JSON.parse(e.target.result);
       if (!payload.ppaBak) { onError("Not a valid .ppabak file."); return; }
       const { keys } = payload;
-      // Write every key back
+      // Only restore keys that belong to this app — reject any foreign keys in
+      // a crafted backup (prevents PIN override and arbitrary localStorage injection).
+      const MAX_VALUE_BYTES = 10 * 1024 * 1024; // 10 MB per key
       for (const [k, v] of Object.entries(keys)) {
+        if (!isAppKey(k)) continue; // silently drop any non-ppa_/fam_ key
         try {
-          localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));
+          const serialised = typeof v === "string" ? v : JSON.stringify(v);
+          if (serialised.length > MAX_VALUE_BYTES) continue; // skip oversized values
+          localStorage.setItem(k, serialised);
         } catch (writeErr) {
-          console.warn(`Restore: could not write key ${k}`, writeErr);
+          console.warn("Restore: could not write a key", writeErr);
         }
       }
       // Update last-backup marker so the badge clears immediately after restore

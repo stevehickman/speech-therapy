@@ -539,6 +539,13 @@ function PersonForm({ person, persons, relationships, onSave, onCancel, defaultR
           <input style={inp} value={photo} placeholder="https://…" onChange={e => setPhoto(e.target.value)} />
         </div>
 
+        {/* Privacy notice — shown once per form open */}
+        <div style={{ fontSize: 12, color: "#4E8B80", background: "#E8F4F2", borderRadius: 8,
+          padding: "7px 10px", lineHeight: 1.5 }}>
+          🔒 Information added here stays <strong>only on this device</strong> and is never uploaded automatically.
+          It is included in backup files you choose to download.
+        </div>
+
         {/* Relationships */}
         <div>
           <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 8 }}>

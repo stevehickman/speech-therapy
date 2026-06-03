@@ -8,15 +8,24 @@ import { isImageGraphic } from "./data/dictionary.js";
 
 // ── API key helpers ────────────────────────────────────────────────────────────
 // The key can come from the Vite env (set at build/install time) or from
-// localStorage (set at runtime via the caregiver setup flow).
+// sessionStorage (set at runtime via the caregiver setup flow).
+// sessionStorage is used intentionally: it is cleared when the tab closes,
+// limiting the window in which a compromised script could read the credential.
 export const API_KEY_STORAGE_KEY = "ppa_api_key";
 
 export function getApiKey() {
-  return localStorage.getItem(API_KEY_STORAGE_KEY) || import.meta.env.VITE_ANTHROPIC_API_KEY || "";
+  // Migrate any key left in localStorage from an older version
+  const legacy = localStorage.getItem(API_KEY_STORAGE_KEY);
+  if (legacy) {
+    sessionStorage.setItem(API_KEY_STORAGE_KEY, legacy);
+    localStorage.removeItem(API_KEY_STORAGE_KEY);
+  }
+  return sessionStorage.getItem(API_KEY_STORAGE_KEY) || import.meta.env.VITE_ANTHROPIC_API_KEY || "";
 }
 
 export function setApiKey(key) {
-  localStorage.setItem(API_KEY_STORAGE_KEY, key.trim());
+  sessionStorage.setItem(API_KEY_STORAGE_KEY, key.trim());
+  localStorage.removeItem(API_KEY_STORAGE_KEY); // ensure no plaintext copy persists
 }
 
 export function hasApiKey() {
@@ -40,7 +49,14 @@ export async function fetchAnthropicApi(body, signal) {
     },
     body: JSON.stringify(body),
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    // Surface auth failures distinctly so caregivers know their key needs attention
+    // rather than patients silently receiving the fallback "Well done — keep going!" text.
+    const msg = data?.error?.message ?? `Anthropic API error ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
 }
 
 // ── CallAPI ────────────────────────────────────────────────────────────────────

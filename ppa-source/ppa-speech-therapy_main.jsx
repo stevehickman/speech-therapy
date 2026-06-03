@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { TOOLS } from "./data/tools.js";
 import { ppaBackupIsStale, ppaDoBackup } from "./ExportImportSystem.jsx";
 import { hasApiKey, setApiKey } from "./shared.jsx";
+import { ppaRunRetentionPurge, ppaStripChatContent } from "./ProgressModule.jsx";
 import { CaregiverPinEntry } from "./AdminPinEntry.jsx";
 
 // Familiar modules
@@ -157,10 +158,47 @@ function ApiKeySetupModal({ onDone }) {
   );
 }
 
+const PRIVACY_NOTICE_KEY = "ppa_privacy_accepted";
+
+function PrivacyNoticeModal({ onAccept }) {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 11000, fontFamily: "'Georgia', 'Times New Roman', serif",
+    }}>
+      <div style={{
+        background: "#FFFDF9", borderRadius: 20, padding: 32, maxWidth: 460, width: "90%",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.3)",
+      }}>
+        <div style={{ fontSize: 28, marginBottom: 12, textAlign: "center" }}>🔒</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#2D3B36", marginBottom: 16, textAlign: "center" }}>
+          About your privacy
+        </div>
+        <ul style={{ color: "#555", fontSize: 14, lineHeight: 1.9, paddingLeft: 20, margin: "0 0 24px" }}>
+          <li>All your data — practice history, photos, and settings — is stored <strong>only on this device</strong>. Nothing is uploaded automatically.</li>
+          <li>When you use Dr. Aria or generate a progress report, your messages and practice activity are sent to <strong>Anthropic's AI service</strong> to generate responses.</li>
+          <li>No data is shared with anyone else unless you choose to download a backup file or email a report.</li>
+        </ul>
+        <button onClick={onAccept} style={{
+          width: "100%", padding: "13px 0",
+          background: "linear-gradient(135deg, #4E8B80, #3A7A6F)",
+          color: "#fff", border: "none", borderRadius: 12,
+          cursor: "pointer", fontWeight: 700, fontSize: 15,
+          fontFamily: "'Georgia', 'Times New Roman', serif",
+        }}>
+          Understood
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [active, setActive] = useState("therapist");
   const [appBackupStale, setAppBackupStale] = useState(() => ppaBackupIsStale(7));
   const [showApiKeySetup, setShowApiKeySetup] = useState(() => !hasApiKey());
+  const [showPrivacyNotice, setShowPrivacyNotice] = useState(() => !localStorage.getItem(PRIVACY_NOTICE_KEY));
 
   // Session log (existing speech-therapy mechanism)
   const _TODAY_KEY = `ppa_progress_${new Date().toISOString().slice(0, 10)}`;
@@ -244,6 +282,10 @@ export default function App() {
     setFamilyMembers(members);
     saveFamilyMembers(members);
   };
+
+  // Purge progress entries older than the configured retention window, and
+  // strip any verbatim chat content written by older app versions.
+  useEffect(() => { ppaRunRetentionPurge(); ppaStripChatContent(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh backup staleness whenever the active module changes
   useEffect(() => { setAppBackupStale(ppaBackupIsStale(7)); }, [active]);
@@ -355,7 +397,14 @@ export default function App() {
         </div>
       </div>
 
-      {showApiKeySetup && (
+      {showPrivacyNotice && (
+        <PrivacyNoticeModal onAccept={() => {
+          localStorage.setItem(PRIVACY_NOTICE_KEY, "1");
+          setShowPrivacyNotice(false);
+        }} />
+      )}
+
+      {!showPrivacyNotice && showApiKeySetup && (
         <ApiKeySetupModal onDone={() => setShowApiKeySetup(false)} />
       )}
     </div>

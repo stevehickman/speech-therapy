@@ -279,6 +279,12 @@ Respond ONLY with valid JSON, no markdown, no extra text:
               {tab === "file" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <label style={{ fontSize: 14, color: "#444", fontWeight: 600 }}>Upload a video file from your device</label>
+                  <div style={{ fontSize: 12, color: "#8B5A10", background: "#FFF8E8", border: "1px solid #F0E0A0",
+                    borderRadius: 8, padding: "7px 10px", lineHeight: 1.5, textAlign: "left" }}>
+                    ⚠️ Videos recorded on phones often contain <strong>location data</strong>. If privacy is a concern,
+                    export the video from the Photos app without location before uploading,
+                    or trim it first — trimmed exports omit GPS metadata.
+                  </div>
                   <div
                     onClick={() => !fileLoading && fileRef.current?.click()}
                     onDragOver={e => { e.preventDefault(); setDragOver(true); }}
