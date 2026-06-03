@@ -195,33 +195,89 @@ Three actors interact with the therapy ecosystem. The **client app** (this codeb
 
 ---
 
-## Clinician–Client Architecture (design — not yet built)
+## Clinician App (`clinician-app/`)
 
-The clinician and client apps form a **subscription-based, bidirectional sync** over an optional lightweight backend. The client app is fully standalone without the backend — it simply won't receive clinician-authored content or send results upstream.
+The clinician dashboard is a separate Vite + React 18 build located at `clinician-app/`. It is **fully built and production-ready**. All patient data stays on the clinician's device; nothing flows to any server except encrypted packets routed through a zero-knowledge relay.
 
-```
-Clinician App (separate Vite build / codebase)
-  ├─ Authors word lists, video clip sets, exercise configs
-  ├─ Manages a roster of subscribed client apps
-  └─ Publishes content bundles to each client's endpoint
-           ↓  content (clinician → client)
-  [Optional lightweight backend — relay only, no storage]
-           ↑  results (client → clinician)
-Client App (this codebase)
-  ├─ Subscribes once via a clinician-generated code/URL
-  ├─ Receives and validates incoming content bundles
-  ├─ Merges items into ppa_naming_items / ppa_video_clips
-  └─ Sends practice results back via the same channel
+### Development
+
+```bash
+cd clinician-app
+npm install
+npm run dev      # Vite dev server on :5174
+npm run build    # Production bundle → dist/
 ```
 
-Key design constraints:
+### Security architecture
 
-- **Client runs standalone.** No backend required. Without a subscription the app works exactly as it does today — all content is caregiver-supplied or built-in.
-- **Subscription via one-time code/URL.** The clinician generates a code in the clinician app; the caregiver enters it in the client app once to register the subscription endpoint.
-- **Bidirectional transport.** Content flows clinician → client; anonymised practice results flow client → clinician via the same relay. Personal caregiver-added content never leaves the device.
-- **Merge semantics.** Same de-duplication logic as existing `.ppa` imports — same-`id` items update in place; new items appended; caregiver-side custom items are untouched and invisible to the clinician.
-- **Content provenance.** Items sourced from a clinician bundle carry `_sourceType: "clinician"` so the caregiver panel can show their origin and the client can re-send updated results correctly.
-- **No clinician PIN in the client app.** All content-management gates in the client app use the caregiver PIN. `ADMIN_PIN` and `AdminPinEntry` exist only in `AdminPinEntry.jsx` for use by the clinician app and must not be imported by any client-app module.
+| Layer | Mechanism |
+|---|---|
+| **App access gate** | Passphrase required on every open; 5-min idle lock; immediate lock on tab hide/device sleep |
+| **Private key protection** | NaCl `crypto_box` keypair; `secretKey` wrapped with AES-GCM using PBKDF2-derived KEK (600 000 iterations); only `wrappedSecretKey + salt + iv` persisted — plaintext bytes live in React state only |
+| **Patient data at rest** | Encrypted with independent AES-GCM DEK (same PBKDF2 params, separate `dataSalt`); `familiar_data` is ciphertext; `familiar_meta` holds only non-PHI keypair metadata + relay URL |
+| **Audit log at rest** | `familiar_audit` encrypted with the same DEK when available |
+| **Relay transport** | NaCl `crypto_box_easy`; relay sees only ciphertext; no patient labels or plaintext ever sent |
+| **Plaintext fallback** | Removed entirely; `encryptForPatient` returns `null` (not plaintext) when patient pubkey absent — callers queue locally |
+| **Crypto library** | `libsodium-wrappers` npm package imported as ES module; bundled by Vite; no `window.sodium` global |
+| **CSP** | `default-src 'self'; connect-src 'self' https:` — no `'unsafe-inline'`, no CDN allowances |
+| **Passphrase strength** | Minimum 12 chars + score ≥ 3 (inline scorer, no external dep); enforced in UI and submit guard |
+
+### Storage keys
+
+| Key | Format | Contains |
+|---|---|---|
+| `familiar_meta` | JSON plaintext | `{ keypair: { publicKey, wrappedSecretKey, salt, iv, dataSalt }, relay_base_url, migration_complete? }` |
+| `familiar_data` | AES-GCM encrypted JSON | `{ patients: [...], settings: { notifications, retention_months } }` |
+| `familiar_audit` | AES-GCM encrypted JSON (plaintext array before first unlock) | `[{ ts, patient_id, action }]` — cap 500, no health data |
+| `familiar_clinician` | `null` (zeroed after migration) | Legacy single-blob; zeroed on first unlock post-migration |
+
+### Module-level singletons (App.jsx)
+
+| Variable | Type | Lifecycle |
+|---|---|---|
+| `_sodium` | libsodium instance | Set once on load; `window.sodium` deleted after capture |
+| `_dataKey` | `CryptoKey` (AES-GCM) | Set on unlock; cleared to `null` on lock, idle timeout, or tab hide |
+| `_migrationComplete` | `boolean` | Set to `true` after first encrypted write AND read from `familiar_meta.migration_complete` on load; once true, `decryptBlob` rejects any plaintext blob |
+
+### Key invariants — never break these
+
+- **`secretKey` never touches storage.** Only `wrappedSecretKey` is persisted. Raw bytes live exclusively in React state (`secretKeyBytes`) and are cleared on lock.
+- **`_dataKey` is cleared on every lock path.** The idle timer, `visibilitychange`, and manual lock all call `_dataKey = null` before `setSecretKeyBytes(null)`.
+- **No plaintext to the relay.** `encryptForPatient` returns `null` (never a base64 stub) if the patient's pubkey is absent. The outbound queue (`patient.outbound_queue`) drains only inside `syncPatient` after `resolvedPubkey` is confirmed.
+- **`decryptBlob` fails closed.** Decryption failure returns no data — it throws. Callers fall through to the legacy plaintext path only when `familiar_data` is absent, not when decryption fails.
+- **Relay receives no patient labels.** `relayCreateTopic` sends only `{ clinician_pubkey }` — no `label` field.
+
+### Clinician–Client relay protocol
+
+```
+Clinician App                    Zero-knowledge relay              Patient App
+     │                                    │                              │
+     │  POST /topics                      │                              │
+     │  { clinician_pubkey }  ──────────► │                              │
+     │◄── { topic_id, poll_token,         │                              │
+     │      inbound_publish_token,        │                              │
+     │      registration_url }            │                              │
+     │                                    │                              │
+     │  [share registration_url out-of-band to patient]                  │
+     │                                    │                              │
+     │                                    │◄── patient registers ────────│
+     │                                    │    (stores patient_pubkey)   │
+     │                                    │                              │
+     │  GET /topics/:id  ─────────────► │                              │
+     │◄── { patient_registered, patient_pubkey }                         │
+     │                                    │                              │
+     │  [clinician encrypts with patient_pubkey]                         │
+     │  POST /topics/:id/inbound ───────► │ ──── delivers ciphertext ───►│
+     │                                    │                              │
+     │◄── poll /topics/:id/packets ─────  │◄─── patient encrypts  ───────│
+     │    decrypt with secretKey          │     with clinician_pubkey    │
+```
+
+The relay never sees plaintext. `topic_id` values are random UUIDs. Patient labels are stored only on the clinician's device.
+
+### Pending relay-side work
+
+- `POST /topics/:id/rotate-inbound-token` — client UI (`TokenRotation` component) is ready and will persist the new token when the relay implements this endpoint.
 
 ---
 
