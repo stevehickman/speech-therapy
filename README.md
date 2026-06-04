@@ -2,7 +2,7 @@ I created this tool specifically to allow for customization. My wife's speech th
 
 Anyone who wants is welcome to try this out.  I'm not asking to be paid for this (though I won't object if you send something my way). However, you should be aware that if you use the locally installed version (which is required to play the video clips), you will need an account with Anthropic - that will cost you less than $10/month depending on your usage (it could be less than $5/month).
 
-Almost all of this (including the documentation) was generated using Claude.ai . What that means is this: I haven't read the doc thoroughly yet. I haven't fully tested this yet. There could be bugs. I'm open to any and all feedback. I suggest you try it out using the link below and, only install it locally.if you really like it. 
+Almost all of this (including the documentation) was generated using Claude.ai . What that means is this: I haven't read the doc thoroughly yet. I haven't fully tested this yet. There could be bugs. I'm open to any and all feedback. I suggest you try it out using the link below and only install it locally if you really like it. 
 
 I'm not posting the install instructions at this time because I'm still working to make them as simple as possible. If you want them, LMK
 
